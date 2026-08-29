@@ -1,40 +1,40 @@
 ---
 name: omasushi
-description: Sync an Omarchy machine from shared "recipe" repositories with the `omasushi` CLI — AUR packages, Omarchy plugins/defaults/font, Herdr plugins, dotfiles, and Claude Code skills/commands. Use when the user wants to sync their setup, record what this machine has, set up a new machine, share their config with others, or edit omasushi.yaml.
+description: Sync an Omarchy machine from shared "omakase" repositories with the `omasushi` CLI — AUR packages, Omarchy plugins/defaults/font, Herdr plugins, dotfiles, and Claude Code skills/commands. Use when the user wants to sync their setup, record what this machine has, set up a new machine, share their config with others, or edit omasushi.yaml.
 ---
 
 # omasushi
 
-`omasushi` diffs one or more **recipes** (git repos with an `omasushi.yaml`) against the
+`omasushi` diffs one or more **omakases** (git repos with an `omasushi.yaml`) against the
 real machine and calls the existing Omarchy / Herdr CLIs to close the gap.
 It is a thin wrapper: no reimplemented yay or git clone. **It never removes anything.**
 
 ## Commands
 
 ```sh
-omasushi use owner/repo          # add a recipe (GitHub shorthand, URL, or local path)
-omasushi list                    # recipes in use
-omasushi update                  # git pull remote recipes
+omasushi use owner/repo          # add an omakase (GitHub shorthand, URL, or local path)
+omasushi list                    # omakases in use
+omasushi update                  # git pull remote omakases
 omasushi remove <name>
 
 omasushi plan [--json]           # diff. `?` lines are installed-but-unrecorded extras
 omasushi apply                   # install what is missing, symlink files/skills/commands
-omasushi export [--to <recipe>] [--host <name>]   # record this machine into a recipe (add-only)
-omasushi init [dir]              # scaffold a new recipe repo
+omasushi export [--to <omakase>] [--host <name>]   # record this machine into an omakase (add-only)
+omasushi init [dir]              # scaffold a new omakase repo
 
-omasushi -f path/omasushi.yaml plan   # single-manifest mode (developing a recipe)
+omasushi -f path/omasushi.yaml plan   # single-manifest mode (developing an omakase)
 omasushi -H <hostname> plan            # resolve as another host
 ```
 
-Recipes are cloned to `~/.local/share/omasushi/recipes/<name>`; the list lives in
-`~/.config/omasushi/config.yaml`. With no recipe configured, `./omasushi.yaml` is used.
+Omakases are cloned to `~/.local/share/omasushi/omakases/<name>`; the list lives in
+`~/.config/omasushi/config.yaml`. With no omakase configured, `./omasushi.yaml` is used.
 
 ## Typical workflows
 
-1. **Installed something on machine A** → `omasushi plan` shows `?` → `omasushi export` → commit & push the recipe
+1. **Installed something on machine A** → `omasushi plan` shows `?` → `omasushi export` → commit & push the omakase
 2. **Bring machine B up** → `omasushi update` → `omasushi plan` → `omasushi apply`
 3. **Fresh machine** → `go install github.com/polidog/omasushi/cmd/omasushi@latest` → `omasushi use owner/repo` → `omasushi apply`
-4. **Publish your setup** → `omasushi init my-recipe` → copy dotfiles under `files/`, skills under `skills/` → `omasushi -f my-recipe/omasushi.yaml export` → push
+4. **Publish your setup** → `omasushi init my-omakase` → copy dotfiles under `files/`, skills under `skills/` → `omasushi -f my-omakase/omasushi.yaml export` → push
 
 When the user says "sync", **show `plan` first, then run `apply`** — apply runs yay and
 git clone, so do not run it without the user seeing the plan.
@@ -72,14 +72,14 @@ hosts:
     files: {...}
 ```
 
-Several recipes stack in `use` order; a later recipe wins for the same key/destination.
+Several omakases stack in `use` order; a later omakase wins for the same key/destination.
 
 ## Editing rules
 
-- Never put secrets (tokens, `calendar-sync.json`, …) under `files:` — recipes are meant to be public
-- To share a file: copy it into the recipe's `files/`, then add the mapping; `apply` swaps the original for a symlink
+- Never put secrets (tokens, `calendar-sync.json`, …) under `files:` — omakases are meant to be public
+- To share a file: copy it into the omakase's `files/`, then add the mapping; `apply` swaps the original for a symlink
 - Skills/commands are linked **per entry**, so the machine's own `~/.claude/skills` stay untouched
-- `omarchy font set` / `omarchy theme set` rewrite terminal configs with `sed -i`, which turns the symlink back into a real file. Copy the new file into the recipe and `apply` again (plan shows the `file-link` again)
+- `omarchy font set` / `omarchy theme set` rewrite terminal configs with `sed -i`, which turns the symlink back into a real file. Copy the new file into the omakase and `apply` again (plan shows the `file-link` again)
 - `font` / `defaults` empty means "don't care". `export` only fills them when the base is empty
 - Machine-specific things (GPU drivers, monitor layouts) belong under `hosts.<hostname>`
 - First-party `omarchy.*` plugins are ignored by probe/export
@@ -87,8 +87,8 @@ Several recipes stack in `use` order; a later recipe wins for the same key/desti
 ## Source layout (github.com/polidog/omasushi)
 
 - `cmd/omasushi/manifest.go` — YAML types, `Resolve(host)`, `Overlay.merge`
-- `cmd/omasushi/recipe.go` — config, `use`/`remove`/`update`, source resolution
+- `cmd/omasushi/omakase.go` — config, `use`/`remove`/`update`, source resolution
 - `cmd/omasushi/probe.go` — read the real machine (`State`). Add a `probeXxx` here for a new target
-- `cmd/omasushi/plan.go` — diff → `Action{Kind, Desc, Run}`; `recipeLinks` expands files/skills/commands
+- `cmd/omasushi/plan.go` — diff → `Action{Kind, Desc, Run}`; `omakaseLinks` expands files/skills/commands
 - `cmd/omasushi/main.go` — CLI, `export`, `init`
 - `manifest.json`, `Panel.qml`, `Model.js` (repo root) — Omarchy bar widget (`omarchy plugin add https://github.com/polidog/omasushi.git`) that shows pending actions and runs apply in a floating terminal

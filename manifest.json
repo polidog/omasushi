@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "polidog",
   "license": "MIT",
-  "description": "Shows how far this machine has drifted from your omasushi recipes, and applies them from the bar.",
+  "description": "Shows how far this machine has drifted from your omasushi omakases, and applies them from the bar.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "omasushi",
-    "description": "Pending recipe actions in the bar; click for the plan, apply or export in a floating terminal.",
+    "description": "Pending omakase actions in the bar; click for the plan, apply or export in a floating terminal.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",

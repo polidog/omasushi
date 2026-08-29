@@ -10,10 +10,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// A Recipe is a directory (usually a git checkout) holding an omasushi.yaml
-// plus the files, skills and commands it refers to. Several recipes can be in
+// A Omakase is a directory (usually a git checkout) holding an omasushi.yaml
+// plus the files, skills and commands it refers to. Several omakases can be in
 // use at once; they are layered in config order, later ones winning.
-type Recipe struct {
+type Omakase struct {
 	Name     string
 	Source   string // what the user typed: owner/repo, URL, or local path
 	Dir      string // where the checkout lives
@@ -21,14 +21,14 @@ type Recipe struct {
 	Manifest *Manifest
 }
 
-func (r Recipe) ManifestPath() string { return filepath.Join(r.Dir, ManifestFile) }
+func (r Omakase) ManifestPath() string { return filepath.Join(r.Dir, ManifestFile) }
 
-// Config is ~/.config/omasushi/config.yaml: the ordered list of recipes in use.
+// Config is ~/.config/omasushi/config.yaml: the ordered list of omakases in use.
 type Config struct {
-	Recipes []RecipeRef `yaml:"recipes"`
+	Omakases []OmakaseRef `yaml:"omakases"`
 }
 
-type RecipeRef struct {
+type OmakaseRef struct {
 	Name   string `yaml:"name"`
 	Source string `yaml:"source"`
 }
@@ -40,11 +40,11 @@ func configPath() string {
 	return expandHome("~/.config/omasushi/config.yaml")
 }
 
-func recipesDir() string {
+func omakasesDir() string {
 	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
-		return filepath.Join(d, "omasushi", "recipes")
+		return filepath.Join(d, "omasushi", "omakases")
 	}
-	return expandHome("~/.local/share/omasushi/recipes")
+	return expandHome("~/.local/share/omasushi/omakases")
 }
 
 func LoadConfig() (*Config, error) {
@@ -82,7 +82,7 @@ func (c *Config) Save() error {
 func resolveSource(s string) (name, target string, local bool, err error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "", "", false, fmt.Errorf("empty recipe source")
+		return "", "", false, fmt.Errorf("empty omakase source")
 	}
 	isPathy := strings.HasPrefix(s, "/") || strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") ||
 		strings.HasPrefix(s, "~") || s == "."
@@ -102,7 +102,7 @@ func resolveSource(s string) (name, target string, local bool, err error) {
 	if !strings.Contains(s, "://") && !strings.HasPrefix(s, "git@") {
 		parts := strings.Split(strings.Trim(s, "/"), "/")
 		if len(parts) != 2 {
-			return "", "", false, fmt.Errorf("recipe source must be owner/repo, a git URL, or a local path: %q", s)
+			return "", "", false, fmt.Errorf("omakase source must be owner/repo, a git URL, or a local path: %q", s)
 		}
 		url = "https://github.com/" + parts[0] + "/" + parts[1] + ".git"
 	}
@@ -110,23 +110,23 @@ func resolveSource(s string) (name, target string, local bool, err error) {
 	return name, url, false, nil
 }
 
-// LoadRecipes materialises the configured recipes. Missing checkouts are an
+// LoadOmakases materialises the configured omakases. Missing checkouts are an
 // error (run `omasushi use` again); a missing manifest is an empty manifest.
-func LoadRecipes(c *Config) ([]Recipe, error) {
-	var out []Recipe
-	for _, ref := range c.Recipes {
+func LoadOmakases(c *Config) ([]Omakase, error) {
+	var out []Omakase
+	for _, ref := range c.Omakases {
 		_, target, local, err := resolveSource(ref.Source)
 		if err != nil {
 			return nil, err
 		}
-		r := Recipe{Name: ref.Name, Source: ref.Source, Local: local}
+		r := Omakase{Name: ref.Name, Source: ref.Source, Local: local}
 		if local {
 			r.Dir = target
 		} else {
-			r.Dir = filepath.Join(recipesDir(), ref.Name)
+			r.Dir = filepath.Join(omakasesDir(), ref.Name)
 		}
 		if _, err := os.Stat(r.Dir); err != nil {
-			return nil, fmt.Errorf("recipe %s: checkout missing at %s (run `omasushi use %s`)", ref.Name, r.Dir, ref.Source)
+			return nil, fmt.Errorf("omakase %s: checkout missing at %s (run `omasushi use %s`)", ref.Name, r.Dir, ref.Source)
 		}
 		m, err := LoadManifest(r.ManifestPath())
 		if err != nil {
@@ -138,84 +138,84 @@ func LoadRecipes(c *Config) ([]Recipe, error) {
 	return out, nil
 }
 
-// recipeFromDir treats an arbitrary directory as the single active recipe
-// (for `-f path/omasushi.yaml`, and for running inside a recipe checkout).
-func recipeFromDir(manifestPath string) (Recipe, error) {
+// omakaseFromDir treats an arbitrary directory as the single active omakase
+// (for `-f path/omasushi.yaml`, and for running inside an omakase checkout).
+func omakaseFromDir(manifestPath string) (Omakase, error) {
 	abs, err := filepath.Abs(manifestPath)
 	if err != nil {
-		return Recipe{}, err
+		return Omakase{}, err
 	}
 	m, err := LoadManifest(abs)
 	if err != nil {
-		return Recipe{}, err
+		return Omakase{}, err
 	}
 	dir := filepath.Dir(abs)
-	return Recipe{Name: filepath.Base(dir), Source: dir, Dir: dir, Local: true, Manifest: m}, nil
+	return Omakase{Name: filepath.Base(dir), Source: dir, Dir: dir, Local: true, Manifest: m}, nil
 }
 
-// Use adds a recipe: clones remote sources into recipesDir, records local
+// Use adds an omakase: clones remote sources into omakasesDir, records local
 // paths as they are. Re-using an existing name refreshes the checkout.
-func (c *Config) Use(source string) (Recipe, error) {
+func (c *Config) Use(source string) (Omakase, error) {
 	name, target, local, err := resolveSource(source)
 	if err != nil {
-		return Recipe{}, err
+		return Omakase{}, err
 	}
-	r := Recipe{Name: name, Source: source, Local: local}
+	r := Omakase{Name: name, Source: source, Local: local}
 	if local {
 		r.Dir = target
 		if _, err := os.Stat(filepath.Join(r.Dir, ManifestFile)); err != nil {
-			return Recipe{}, fmt.Errorf("%s has no %s", r.Dir, ManifestFile)
+			return Omakase{}, fmt.Errorf("%s has no %s", r.Dir, ManifestFile)
 		}
 	} else {
-		r.Dir = filepath.Join(recipesDir(), name)
+		r.Dir = filepath.Join(omakasesDir(), name)
 		if _, err := os.Stat(r.Dir); err == nil {
 			if err := runVisible("git", "-C", r.Dir, "pull", "--ff-only"); err != nil {
-				return Recipe{}, err
+				return Omakase{}, err
 			}
 		} else {
-			if err := os.MkdirAll(recipesDir(), 0o755); err != nil {
-				return Recipe{}, err
+			if err := os.MkdirAll(omakasesDir(), 0o755); err != nil {
+				return Omakase{}, err
 			}
 			if err := runVisible("git", "clone", "--depth", "1", target, r.Dir); err != nil {
-				return Recipe{}, err
+				return Omakase{}, err
 			}
 		}
 	}
 	m, err := LoadManifest(r.ManifestPath())
 	if err != nil {
-		return Recipe{}, err
+		return Omakase{}, err
 	}
 	r.Manifest = m
-	for i, ref := range c.Recipes {
+	for i, ref := range c.Omakases {
 		if ref.Name == name {
-			c.Recipes[i].Source = source
+			c.Omakases[i].Source = source
 			return r, c.Save()
 		}
 	}
-	c.Recipes = append(c.Recipes, RecipeRef{Name: name, Source: source})
+	c.Omakases = append(c.Omakases, OmakaseRef{Name: name, Source: source})
 	return r, c.Save()
 }
 
 func (c *Config) Remove(name string) error {
-	for i, ref := range c.Recipes {
+	for i, ref := range c.Omakases {
 		if ref.Name != name {
 			continue
 		}
-		c.Recipes = append(c.Recipes[:i], c.Recipes[i+1:]...)
+		c.Omakases = append(c.Omakases[:i], c.Omakases[i+1:]...)
 		if _, _, local, _ := resolveSource(ref.Source); !local {
-			dir := filepath.Join(recipesDir(), name)
-			if strings.HasPrefix(dir, recipesDir()) {
+			dir := filepath.Join(omakasesDir(), name)
+			if strings.HasPrefix(dir, omakasesDir()) {
 				os.RemoveAll(dir)
 			}
 		}
 		return c.Save()
 	}
-	return fmt.Errorf("no recipe named %q", name)
+	return fmt.Errorf("no omakase named %q", name)
 }
 
-// Update pulls every remote recipe. Local recipes are left alone.
-func Update(recipes []Recipe) error {
-	for _, r := range recipes {
+// Update pulls every remote omakase. Local omakases are left alone.
+func Update(omakases []Omakase) error {
+	for _, r := range omakases {
 		if r.Local {
 			fmt.Printf("==> %s: local, skipped\n", r.Name)
 			continue

@@ -9,27 +9,27 @@ import (
 )
 
 type Action struct {
-	Kind   string       `json:"kind"` // aur, pacman, font, default-*, omarchy-add, omarchy-enable, herdr-add, herdr-reload, file-link, skill-link, command-link
-	Desc   string       `json:"desc"`
-	Recipe string       `json:"recipe,omitempty"`
-	Run    func() error `json:"-"`
+	Kind    string       `json:"kind"` // aur, pacman, font, default-*, omarchy-add, omarchy-enable, herdr-add, herdr-reload, file-link, skill-link, command-link
+	Desc    string       `json:"desc"`
+	Omakase string       `json:"omakase,omitempty"`
+	Run     func() error `json:"-"`
 }
 
-// link is a resolved symlink request: absolute source inside a recipe,
+// link is a resolved symlink request: absolute source inside an omakase,
 // destination with ~ expanded.
 type link struct {
-	kind, recipe, label, src, dst string
+	kind, omakase, label, src, dst string
 }
 
-// Plan diffs the layered recipes against the probed state and returns the
+// Plan diffs the layered omakases against the probed state and returns the
 // actions needed. It never removes anything; extras are reported separately.
-func Plan(recipes []Recipe, host string, have *State) (actions []Action, extras []string) {
+func Plan(omakases []Omakase, host string, have *State) (actions []Action, extras []string) {
 	var want Overlay
 	var links []link
-	for _, r := range recipes {
+	for _, r := range omakases {
 		o := r.Manifest.Resolve(host)
 		want = want.merge(o)
-		links = append(links, recipeLinks(r, o)...)
+		links = append(links, omakaseLinks(r, o)...)
 	}
 
 	var aur, pacman []string
@@ -104,7 +104,7 @@ func Plan(recipes []Recipe, host string, have *State) (actions []Action, extras 
 		if cur, err := os.Readlink(l.dst); err == nil && cur == l.src {
 			continue
 		}
-		actions = append(actions, Action{Kind: l.kind, Recipe: l.recipe, Desc: l.label, Run: func() error {
+		actions = append(actions, Action{Kind: l.kind, Omakase: l.omakase, Desc: l.label, Run: func() error {
 			return linkFile(l.src, l.dst)
 		}})
 		if strings.HasPrefix(l.dst, herdrDir) {
@@ -152,10 +152,10 @@ func Plan(recipes []Recipe, host string, have *State) (actions []Action, extras 
 	return actions, extras
 }
 
-// recipeLinks expands files:, claude.skills and claude.commands of one
-// recipe into concrete symlinks. Later recipes override earlier ones for the
+// omakaseLinks expands files:, claude.skills and claude.commands of one
+// omakase into concrete symlinks. Later omakases override earlier ones for the
 // same destination (handled by order in Plan: the last link wins on apply).
-func recipeLinks(r Recipe, o Overlay) []link {
+func omakaseLinks(r Omakase, o Overlay) []link {
 	var out []link
 	srcs := make([]string, 0, len(o.Files))
 	for s := range o.Files {

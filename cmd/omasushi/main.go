@@ -13,33 +13,33 @@ import (
 var version = "dev"
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `omasushi — share your Omarchy setup as a recipe repository
+	fmt.Fprintln(os.Stderr, `omasushi — share your Omarchy setup as an omakase repository
 
 usage: omasushi [-f omasushi.yaml] [-H host] <command> [args]
 
-recipes:
-  use <owner/repo|url|path>   add a recipe (clone it, or point at a local dir)
-  list                        show recipes in use
-  update                      git pull every remote recipe
-  remove <name>               forget a recipe (deletes its managed checkout)
-  init [dir]                  scaffold a new recipe repository
+omakases:
+  use <owner/repo|url|path>   add an omakase (clone it, or point at a local dir)
+  list                        show omakases in use
+  update                      git pull every remote omakase
+  remove <name>               forget an omakase (deletes its managed checkout)
+  init [dir]                  scaffold a new omakase repository
 
 machine:
   plan [--json]               show what apply would do
   apply                       install missing packages/plugins, link files/skills
-  export [--to <recipe>] [--host <name>]
+  export [--to <omakase>] [--host <name>]
                               record this machine's installed packages/plugins
-                              into a recipe (--host writes under hosts.<name>)
+                              into an omakase (--host writes under hosts.<name>)
   version
 
--f path      use a single manifest instead of the configured recipes
-             (defaults to ./omasushi.yaml when no recipe is configured)
+-f path      use a single manifest instead of the configured omakases
+             (defaults to ./omasushi.yaml when no omakase is configured)
 -H host      resolve hosts.<host> overlays as if running on that machine`)
 	os.Exit(2)
 }
 
 func main() {
-	file := flag.String("f", "", "manifest path (single-recipe mode)")
+	file := flag.String("f", "", "manifest path (single-omakase mode)")
 	host := flag.String("H", "", "hostname to resolve (default: this machine)")
 	flag.Usage = usage
 	flag.Parse()
@@ -63,7 +63,7 @@ func main() {
 		if len(args) > 0 {
 			dir = args[0]
 		}
-		die(initRecipe(dir))
+		die(initOmakase(dir))
 		return
 	case "use":
 		if len(args) != 1 {
@@ -82,15 +82,15 @@ func main() {
 		return
 	}
 
-	recipes, err := activeRecipes(cfg, *file)
+	omakases, err := activeOmakases(cfg, *file)
 	die(err)
 
 	switch cmd {
 	case "list":
-		if len(recipes) == 0 {
-			fmt.Println("no recipes in use (try: omasushi use owner/repo)")
+		if len(omakases) == 0 {
+			fmt.Println("no omakases in use (try: omasushi use owner/repo)")
 		}
-		for _, r := range recipes {
+		for _, r := range omakases {
 			kind := "git"
 			if r.Local {
 				kind = "local"
@@ -98,23 +98,23 @@ func main() {
 			fmt.Printf("%-24s %-6s %s\n", r.Name, kind, r.Dir)
 		}
 	case "update":
-		die(Update(recipes))
+		die(Update(omakases))
 	case "plan":
 		fs := flag.NewFlagSet("plan", flag.ExitOnError)
 		asJSON := fs.Bool("json", false, "machine readable output")
 		fs.Parse(args)
 		have, err := Probe()
 		die(err)
-		actions, extras := Plan(recipes, *host, have)
+		actions, extras := Plan(omakases, *host, have)
 		if *asJSON {
-			printPlanJSON(recipes, actions, extras)
+			printPlanJSON(omakases, actions, extras)
 		} else {
 			printPlan(actions, extras)
 		}
 	case "apply":
 		have, err := Probe()
 		die(err)
-		actions, _ := Plan(recipes, *host, have)
+		actions, _ := Plan(omakases, *host, have)
 		if len(actions) == 0 {
 			fmt.Println("up to date")
 			return
@@ -126,13 +126,13 @@ func main() {
 	case "export":
 		fs := flag.NewFlagSet("export", flag.ExitOnError)
 		toHost := fs.String("host", "", "write into hosts.<name> overlay")
-		to := fs.String("to", "", "recipe to write into (required when several are in use)")
+		to := fs.String("to", "", "omakase to write into (required when several are in use)")
 		fs.Parse(args)
-		target, err := pickRecipe(recipes, *to)
+		target, err := pickOmakase(omakases, *to)
 		die(err)
 		have, err := Probe()
 		die(err)
-		added := export(recipes, target, have, *host, *toHost)
+		added := export(omakases, target, have, *host, *toHost)
 		if len(added) == 0 {
 			fmt.Println("nothing new")
 			return
@@ -147,48 +147,48 @@ func main() {
 	}
 }
 
-// activeRecipes picks the recipe set: -f wins; otherwise the config; and
+// activeOmakases picks the omakase set: -f wins; otherwise the config; and
 // when nothing is configured, an omasushi.yaml in the working directory.
-func activeRecipes(cfg *Config, file string) ([]Recipe, error) {
+func activeOmakases(cfg *Config, file string) ([]Omakase, error) {
 	if file != "" {
-		r, err := recipeFromDir(file)
+		r, err := omakaseFromDir(file)
 		if err != nil {
 			return nil, err
 		}
-		return []Recipe{r}, nil
+		return []Omakase{r}, nil
 	}
-	if len(cfg.Recipes) > 0 {
-		return LoadRecipes(cfg)
+	if len(cfg.Omakases) > 0 {
+		return LoadOmakases(cfg)
 	}
 	if _, err := os.Stat(ManifestFile); err == nil {
-		r, err := recipeFromDir(ManifestFile)
+		r, err := omakaseFromDir(ManifestFile)
 		if err != nil {
 			return nil, err
 		}
-		return []Recipe{r}, nil
+		return []Omakase{r}, nil
 	}
 	return nil, nil
 }
 
-func pickRecipe(recipes []Recipe, name string) (*Recipe, error) {
+func pickOmakase(omakases []Omakase, name string) (*Omakase, error) {
 	switch {
-	case len(recipes) == 0:
-		return nil, fmt.Errorf("no recipe in use; run `omasushi init` or `omasushi use <repo>` first")
-	case name == "" && len(recipes) == 1:
-		return &recipes[0], nil
+	case len(omakases) == 0:
+		return nil, fmt.Errorf("no omakase in use; run `omasushi init` or `omasushi use <repo>` first")
+	case name == "" && len(omakases) == 1:
+		return &omakases[0], nil
 	case name == "":
 		var names []string
-		for _, r := range recipes {
+		for _, r := range omakases {
 			names = append(names, r.Name)
 		}
-		return nil, fmt.Errorf("several recipes in use (%s); pick one with --to", strings.Join(names, ", "))
+		return nil, fmt.Errorf("several omakases in use (%s); pick one with --to", strings.Join(names, ", "))
 	}
-	for i := range recipes {
-		if recipes[i].Name == name {
-			return &recipes[i], nil
+	for i := range omakases {
+		if omakases[i].Name == name {
+			return &omakases[i], nil
 		}
 	}
-	return nil, fmt.Errorf("no recipe named %q", name)
+	return nil, fmt.Errorf("no omakase named %q", name)
 }
 
 func printPlan(actions []Action, extras []string) {
@@ -199,29 +199,29 @@ func printPlan(actions []Action, extras []string) {
 		fmt.Printf("+ %-15s %s\n", a.Kind, a.Desc)
 	}
 	if len(extras) > 0 {
-		fmt.Println("\ninstalled but not in any recipe (run `omasushi export` to record):")
+		fmt.Println("\ninstalled but not in any omakase (run `omasushi export` to record):")
 		for _, e := range extras {
 			fmt.Println("  ?", e)
 		}
 	}
 }
 
-func printPlanJSON(recipes []Recipe, actions []Action, extras []string) {
-	type recipeOut struct {
+func printPlanJSON(omakases []Omakase, actions []Action, extras []string) {
+	type omakaseOut struct {
 		Name  string `json:"name"`
 		Dir   string `json:"dir"`
 		Local bool   `json:"local"`
 	}
 	out := struct {
-		Recipes []recipeOut `json:"recipes"`
-		Actions []Action    `json:"actions"`
-		Extras  []string    `json:"extras"`
+		Omakases []omakaseOut `json:"omakases"`
+		Actions  []Action     `json:"actions"`
+		Extras   []string     `json:"extras"`
 	}{Actions: []Action{}, Extras: []string{}}
-	for _, r := range recipes {
-		out.Recipes = append(out.Recipes, recipeOut{r.Name, r.Dir, r.Local})
+	for _, r := range omakases {
+		out.Omakases = append(out.Omakases, omakaseOut{r.Name, r.Dir, r.Local})
 	}
-	if out.Recipes == nil {
-		out.Recipes = []recipeOut{}
+	if out.Omakases == nil {
+		out.Omakases = []omakaseOut{}
 	}
 	if actions != nil {
 		out.Actions = actions
@@ -236,11 +236,11 @@ func printPlanJSON(recipes []Recipe, actions []Action, extras []string) {
 }
 
 // export adds installed-but-unlisted items to target. It only adds; it never
-// removes entries. Items already declared by any recipe (base or the
+// removes entries. Items already declared by any omakase (base or the
 // resolved host overlay) are skipped.
-func export(recipes []Recipe, target *Recipe, have *State, host, toHost string) (added []string) {
+func export(omakases []Omakase, target *Omakase, have *State, host, toHost string) (added []string) {
 	var resolved Overlay
-	for _, r := range recipes {
+	for _, r := range omakases {
 		h := host
 		if toHost != "" {
 			h = toHost
@@ -325,8 +325,8 @@ func export(recipes []Recipe, target *Recipe, have *State, host, toHost string) 
 	return added
 }
 
-// initRecipe writes a starter omasushi.yaml and the conventional directories.
-func initRecipe(dir string) error {
+// initOmakase writes a starter omasushi.yaml and the conventional directories.
+func initOmakase(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -344,7 +344,7 @@ func initRecipe(dir string) error {
 	if abs, err := filepath.Abs(dir); err == nil {
 		name = filepath.Base(abs)
 	}
-	body := fmt.Sprintf(`# omasushi recipe — see https://github.com/polidog/omasushi
+	body := fmt.Sprintf(`# omasushi omakase — see https://github.com/polidog/omasushi
 name: %s
 description: ""
 

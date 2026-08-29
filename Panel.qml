@@ -15,7 +15,7 @@ Panel {
   moduleName: "polidog.omasushi"
   ipcTarget: "polidog.omasushi"
 
-  property var plan: ({ missing: false, error: false, recipes: [], actions: [], extras: [] })
+  property var plan: ({ missing: false, error: false, omakases: [], actions: [], extras: [] })
   property bool loading: false
   property int selectedIndex: 0
   property bool cursorActive: false
@@ -23,7 +23,7 @@ Panel {
   readonly property int refreshMs: Math.max(1, setting("refreshMinutes", 10)) * 60000
   readonly property bool hideWhenUpToDate: setting("hideWhenUpToDate", false) === true
   readonly property int pending: plan.actions.length
-  readonly property bool healthy: !plan.missing && !plan.error && plan.recipes.length > 0
+  readonly property bool healthy: !plan.missing && !plan.error && plan.omakases.length > 0
   readonly property bool upToDate: healthy && pending === 0
 
   function refresh() {
@@ -163,30 +163,30 @@ Panel {
 
           // ---------- Problems ----------
           Text {
-            visible: root.plan.missing || root.plan.error || root.plan.recipes.length === 0
+            visible: root.plan.missing || root.plan.error || root.plan.omakases.length === 0
             width: parent.width
             wrapMode: Text.WordWrap
             text: root.plan.missing
               ? "The omasushi binary is not on PATH. Install it with `go install github.com/polidog/omasushi/cmd/omasushi@latest`."
               : (root.plan.error
                 ? "`omasushi plan --json` failed. Run it in a terminal to see why."
-                : "No recipe in use yet. Run `omasushi use owner/repo` to pick one.")
+                : "No omakase in use yet. Run `omasushi use owner/repo` to pick one.")
             color: Qt.darker(root.bar.foreground, 1.4)
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.body
           }
 
-          // ---------- Recipes ----------
+          // ---------- Omakases ----------
           PanelSectionHeader {
-            visible: root.plan.recipes.length > 0
+            visible: root.plan.omakases.length > 0
             width: parent.width
-            text: "RECIPES"
+            text: "OMAKASES"
             foreground: root.bar.foreground
             fontFamily: root.bar.fontFamily
           }
 
           Repeater {
-            model: root.plan.recipes
+            model: root.plan.omakases
             delegate: Text {
               required property var modelData
               width: panelColumn.width
@@ -250,7 +250,7 @@ Panel {
                 }
                 Text {
                   width: parent.width
-                  text: row.modelData.kind + (row.modelData.recipe ? " · " + row.modelData.recipe : "")
+                  text: row.modelData.kind + (row.modelData.omakase ? " · " + row.modelData.omakase : "")
                   elide: Text.ElideRight
                   color: Qt.darker(root.bar.foreground, 1.6)
                   font.family: root.bar.fontFamily
@@ -268,7 +268,7 @@ Panel {
           PanelSectionHeader {
             visible: root.plan.extras.length > 0
             width: parent.width
-            text: "INSTALLED BUT NOT IN A RECIPE"
+            text: "INSTALLED BUT NOT IN A OMAKASE"
             foreground: root.bar.foreground
             fontFamily: root.bar.fontFamily
           }

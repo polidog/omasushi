@@ -1,4 +1,4 @@
-# This repository is itself a recipe: `omasushi use polidog/omasushi` installs
+# This repository is itself an omakase: `omasushi use polidog/omasushi` installs
 # the omasushi Claude Code skill and the bar widget.
 name: omasushi
 description: The omasushi CLI's own skill and bar widget.

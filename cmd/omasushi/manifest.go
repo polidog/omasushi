@@ -10,10 +10,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ManifestFile is the file name a recipe repository carries at its root.
+// ManifestFile is the file name an omakase repository carries at its root.
 const ManifestFile = "omasushi.yaml"
 
-// Manifest is the desired state of a machine, as declared by one recipe.
+// Manifest is the desired state of a machine, as declared by one omakase.
 // Hosts holds per-host overlays that are merged onto the base when
 // resolved for a given hostname.
 type Manifest struct {
@@ -86,7 +86,7 @@ type HerdrPlugin struct {
 	Ref    string `yaml:"ref,omitempty"`
 }
 
-// Claude shares Claude Code skills and slash commands. Skills is a recipe
+// Claude shares Claude Code skills and slash commands. Skills is an omakase
 // relative directory whose children are linked to ~/.claude/skills/<name>;
 // Commands is a directory whose *.md files are linked to
 // ~/.claude/commands/<name>.md. Linking per entry (not the whole directory)
@@ -142,7 +142,7 @@ func (m *Manifest) Resolve(host string) Overlay {
 }
 
 // merge layers o on top of r. Used both for host overlays and for stacking
-// several recipes: later wins on scalars, lists are unioned.
+// several omakases: later wins on scalars, lists are unioned.
 func (r Overlay) merge(o Overlay) Overlay {
 	r.Packages.Pacman = union(r.Packages.Pacman, o.Packages.Pacman)
 	r.Packages.Aur = union(r.Packages.Aur, o.Packages.Aur)

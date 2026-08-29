@@ -16,12 +16,12 @@ function terminalCommand(sub) {
 }
 
 function parsePlan(text) {
-  var out = { missing: false, error: false, recipes: [], actions: [], extras: [] }
+  var out = { missing: false, error: false, omakases: [], actions: [], extras: [] }
   try {
     var j = JSON.parse(text)
     if (j.missing) { out.missing = true; return out }
     if (j.error) { out.error = true; return out }
-    out.recipes = Array.isArray(j.recipes) ? j.recipes : []
+    out.omakases = Array.isArray(j.omakases) ? j.omakases : []
     out.actions = Array.isArray(j.actions) ? j.actions : []
     out.extras = Array.isArray(j.extras) ? j.extras : []
   } catch (e) {
@@ -52,7 +52,7 @@ function kindIcon(kind) {
 function statusLine(plan) {
   if (plan.missing) return "OMASUSHI NOT INSTALLED"
   if (plan.error) return "PLAN FAILED"
-  if (plan.recipes.length === 0) return "NO RECIPE IN USE"
+  if (plan.omakases.length === 0) return "NO OMAKASE IN USE"
   var n = plan.actions.length
   if (n === 0) return "UP TO DATE"
   return (n + (n === 1 ? " PENDING ACTION" : " PENDING ACTIONS"))

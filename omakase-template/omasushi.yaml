@@ -1,4 +1,4 @@
-# omasushi recipe — https://github.com/polidog/omasushi
+# omasushi omakase — https://github.com/polidog/omasushi
 #
 # Copy this directory, run `omasushi -f omasushi.yaml export` on a machine you
 # like, add your dotfiles under files/ and Claude skills under skills/, push.
