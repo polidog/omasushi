@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "omasushi",
-    "description": "Pending omakase actions in the bar; click for the plan, apply or export in a floating terminal.",
+    "description": "Pending omakase actions in the bar; click for the plan, apply or export in a floating terminal, or open an omakase's omasushi.yaml in your editor.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
