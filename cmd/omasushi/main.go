@@ -24,8 +24,8 @@ omakases:
   remove <name>               forget an omakase (deletes its managed checkout)
   init [dir]                  scaffold a new omakase repository
   publish [<name>|<repo>|<path>]
-                              put an omakase on omasushi-web: opens the
-                              registration page prefilled with its repo URL
+                              put an omakase on omasushi-web (POSTs its repo
+                              URL to the site's API; --browser uses the form)
 
 machine:
   status [--json]             where am I: omakases, their git state, this

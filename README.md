@@ -57,13 +57,14 @@ To put it on the [omasushi-web](https://github.com/polidog/omasushi-web) conveyo
 where others can find it:
 
 ```sh
-omasushi publish            # opens omasushi-web's registration page with this repo's URL
+omasushi publish            # registers this repo on omasushi-web, prints the plate's URL
 ```
 
 `publish` reads the repo URL from `origin`, checks that `omasushi.yaml` is committed
-and pushed, and opens `<web>/new?url=…` in your browser — sign in with GitHub / GitLab
-there and press the button. `--print` only prints the URL; `--web URL` or
-`$OMASUSHI_WEB_URL` points at another instance.
+and pushed, and POSTs it to the site's `/api/omakase` — no account needed; the site
+fetches `omasushi.yaml` from the public repo itself. `--open` opens the new plate in
+your browser, `--browser` uses the web form instead of the API, `--dry-run` only
+prints the URL; `--web URL` or `$OMASUSHI_WEB_URL` points at another instance.
 
 ## What an omakase can declare
 
@@ -93,8 +94,8 @@ omasushi apply                       make it so
 omasushi export [--to omakase] [--host name]
                                      record installed things into an omakase (add-only)
 omasushi init [dir]                  scaffold an omakase
-omasushi publish [name|repo|path] [--print] [--web URL]
-                                     register an omakase on omasushi-web (via browser)
+omasushi publish [name|repo|path] [--open|--browser|--dry-run] [--web URL]
+                                     register an omakase on omasushi-web
 omasushi -f omasushi.yaml <cmd>      single-manifest mode, for working inside an omakase
 omasushi -H <host> <cmd>             resolve hosts.<host> as if on that machine
 ```
