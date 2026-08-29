@@ -1,20 +1,10 @@
-# This repository is itself an omakase: `omasushi use polidog/omasushi` installs
-# the omasushi Claude Code skill and the bar widget.
+# This repository is itself an omakase, split into feature-sized parts.
+#   omasushi use polidog/omasushi          # everything below
+#   omasushi use polidog/omasushi/herdr    # just the herdr keybindings
 name: omasushi
-description: The omasushi CLI's own skill and bar widget.
+description: The omasushi CLI's own skill, bar widget and herdr config.
 
-omarchy:
-  plugins:
-    - url: https://github.com/polidog/omasushi.git
-      enable: true
-
-claude:
-  skills: skills
-
-herdr:
-  plugins:
-    - source: szrenwei/herdr-agent-metrics    # [[keys.command]] herdr-agent-metrics.refresh
-    - source: polidog/herdr-gh-issue-label    # $issue sidebar row
-
-files:
-  files/herdr/config.toml: ~/.config/herdr/config.toml   # tmux-style keybindings (prefix ctrl+b)
+parts:
+  - plugin   # Omarchy bar widget
+  - claude   # Claude Code skill for driving omasushi
+  - herdr    # tmux-style herdr keybindings + plugins

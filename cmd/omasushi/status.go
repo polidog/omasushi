@@ -59,11 +59,11 @@ func gatherStatus(omakases []Omakase, host string, have *State) Status {
 		if r.Manifest != nil {
 			_, o.HasHost = r.Manifest.Hosts[host]
 		}
-		if isGitRepo(r.Dir) {
-			o.Branch = run("git", "-C", r.Dir, "rev-parse", "--abbrev-ref", "HEAD")
-			o.Commit = run("git", "-C", r.Dir, "rev-parse", "--short", "HEAD")
-			o.Modified = len(lines(run("git", "-C", r.Dir, "status", "--porcelain")))
-			if ab := strings.Fields(run("git", "-C", r.Dir, "rev-list", "--left-right", "--count", "HEAD...@{u}")); len(ab) == 2 {
+		if isGitRepo(r.Repo) {
+			o.Branch = run("git", "-C", r.Repo, "rev-parse", "--abbrev-ref", "HEAD")
+			o.Commit = run("git", "-C", r.Repo, "rev-parse", "--short", "HEAD")
+			o.Modified = len(lines(run("git", "-C", r.Repo, "status", "--porcelain")))
+			if ab := strings.Fields(run("git", "-C", r.Repo, "rev-list", "--left-right", "--count", "HEAD...@{u}")); len(ab) == 2 {
 				o.Ahead, _ = strconv.Atoi(ab[0])
 				o.Behind, _ = strconv.Atoi(ab[1])
 			}

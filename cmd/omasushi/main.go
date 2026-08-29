@@ -18,11 +18,17 @@ func usage() {
 usage: omasushi [-f omasushi.yaml] [-H host] <command> [args]
 
 omakases:
-  use <owner/repo|url|path>   add an omakase (clone it, or point at a local dir)
+  use <owner/repo[/part]|url|path>
+                              add an omakase (clone it, or point at a local dir);
+                              owner/repo takes every part of a split repository,
+                              owner/repo/herdr just that one
   list                        show omakases in use
   update                      git pull every remote omakase
   remove <name>               forget an omakase (deletes its managed checkout)
   init [dir]                  scaffold a new omakase repository
+  publish [<name>|<repo>|<path>]
+                              put an omakase on omasushi-web (POSTs its repo
+                              URL to the site's API; --browser uses the form)
 
 machine:
   status [--json]             where am I: omakases, their git state, this
@@ -71,9 +77,11 @@ func main() {
 		if len(args) != 1 {
 			usage()
 		}
-		r, err := cfg.Use(args[0])
+		rs, err := cfg.Use(args[0])
 		die(err)
-		fmt.Printf("using %s (%s)\n", r.Name, r.Dir)
+		for _, r := range rs {
+			fmt.Printf("using %s (%s)\n", r.Name, r.Dir)
+		}
 		return
 	case "remove":
 		if len(args) != 1 {
@@ -81,6 +89,9 @@ func main() {
 		}
 		die(cfg.Remove(args[0]))
 		fmt.Println("removed", args[0])
+		return
+	case "publish":
+		die(publishCmd(cfg, *file, args))
 		return
 	}
 
@@ -165,21 +176,13 @@ func main() {
 // when nothing is configured, an omasushi.yaml in the working directory.
 func activeOmakases(cfg *Config, file string) ([]Omakase, error) {
 	if file != "" {
-		r, err := omakaseFromDir(file)
-		if err != nil {
-			return nil, err
-		}
-		return []Omakase{r}, nil
+		return omakaseFromDir(file)
 	}
 	if len(cfg.Omakases) > 0 {
 		return LoadOmakases(cfg)
 	}
 	if _, err := os.Stat(ManifestFile); err == nil {
-		r, err := omakaseFromDir(ManifestFile)
-		if err != nil {
-			return nil, err
-		}
-		return []Omakase{r}, nil
+		return omakaseFromDir(ManifestFile)
 	}
 	return nil, nil
 }

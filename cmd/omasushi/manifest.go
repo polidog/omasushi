@@ -16,9 +16,15 @@ const ManifestFile = "omasushi.yaml"
 // Manifest is the desired state of a machine, as declared by one omakase.
 // Hosts holds per-host overlays that are merged onto the base when
 // resolved for a given hostname.
+//
+// A repository may instead be split into feature-sized parts (herdr/, kitty/,
+// claude/ …), each a directory with its own omasushi.yaml. The root manifest
+// then only lists them in Parts; `omasushi use owner/repo` takes all of them
+// and `omasushi use owner/repo/herdr` just one.
 type Manifest struct {
 	Name        string             `yaml:"name,omitempty"`
 	Description string             `yaml:"description,omitempty"`
+	Parts       []string           `yaml:"parts,omitempty"`
 	Packages    Packages           `yaml:"packages,omitempty"`
 	Omarchy     Omarchy            `yaml:"omarchy,omitempty"`
 	Herdr       Herdr              `yaml:"herdr,omitempty"`

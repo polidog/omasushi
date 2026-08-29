@@ -1,0 +1,6 @@
+# Claude Code skill for driving omasushi (-> ~/.claude/skills/omasushi).
+name: omasushi/claude
+description: Claude Code skill that knows the omasushi CLI and omasushi.yaml.
+
+claude:
+  skills: skills
