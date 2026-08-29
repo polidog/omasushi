@@ -40,6 +40,18 @@ Panel {
     close()
   }
 
+  // Open an omakase's omasushi.yaml in the Omarchy default editor. With no
+  // index, the first omakase is used.
+  function openManifest(index) {
+    var list = plan.omakases
+    if (list.length === 0) return
+    var i = (index === undefined) ? 0 : index
+    var dir = list[Math.max(0, Math.min(list.length - 1, i))].dir
+    editProc.command = ["omarchy-launch-editor", dir + "/omasushi.yaml"]
+    editProc.running = true
+    close()
+  }
+
   function moveCursor(delta) {
     var n = plan.actions.length
     if (n === 0) return
@@ -73,6 +85,11 @@ Panel {
 
   Process {
     id: termProc
+    onRunningChanged: if (!running) rePlan.restart()
+  }
+
+  Process {
+    id: editProc
     onRunningChanged: if (!running) rePlan.restart()
   }
 
@@ -126,6 +143,7 @@ Panel {
         else if (t === "a" && root.pending > 0) root.runInTerminal("apply")
         else if (t === "e") root.runInTerminal("export")
         else if (t === "u") root.runInTerminal("update")
+        else if (t === "o") root.openManifest()
       }
 
       ScrollView {
@@ -187,14 +205,26 @@ Panel {
 
           Repeater {
             model: root.plan.omakases
-            delegate: Text {
+            delegate: Item {
+              id: omakaseRow
               required property var modelData
+              required property int index
               width: panelColumn.width
-              text: (modelData.local ? "󰉋 " : "󰊤 ") + modelData.name + "  " + modelData.dir
-              elide: Text.ElideMiddle
-              color: Qt.darker(root.bar.foreground, 1.3)
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.caption
+              implicitHeight: omakaseText.implicitHeight
+
+              Text {
+                id: omakaseText
+                width: parent.width
+                text: (omakaseRow.modelData.local ? "󰉋 " : "󰊤 ") + omakaseRow.modelData.name + "  " + omakaseRow.modelData.dir
+                elide: Text.ElideMiddle
+                color: omakaseHover.hovered ? root.bar.foreground : Qt.darker(root.bar.foreground, 1.3)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.underline: omakaseHover.hovered
+              }
+
+              HoverHandler { id: omakaseHover; cursorShape: Qt.PointingHandCursor }
+              TapHandler { onTapped: root.openManifest(omakaseRow.index) }
             }
           }
 
@@ -319,6 +349,16 @@ Panel {
               onClicked: root.runInTerminal("export")
             }
             Button {
+              text: "Edit"
+              iconText: "󰏫"
+              bordered: true
+              enabled: root.plan.omakases.length > 0
+              foreground: root.bar.foreground
+              fontFamily: root.bar.fontFamily
+              tooltipText: "Open omasushi.yaml in the default editor (o)"
+              onClicked: root.openManifest()
+            }
+            Button {
               text: "Update"
               iconText: "󰚰"
               bordered: true
@@ -332,7 +372,7 @@ Panel {
           Text {
             visible: root.healthy
             width: parent.width
-            text: "j/k navigate · a apply · e export · u update · r refresh"
+            text: "j/k navigate · a apply · e export · u update · o open yaml · r refresh"
             color: Qt.darker(root.bar.foreground, 1.6)
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.caption
