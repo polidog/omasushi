@@ -47,7 +47,8 @@ my-omakase/
 takes one, and stacks with parts from other people's repos.
 
 `omasushi` diffs the omakase against the real machine and drives the existing
-`omarchy` / `herdr` / `yay` CLIs to close the gap. It never uninstalls anything.
+`omarchy` / `herdr` / `yay` CLIs to close the gap. It never uninstalls anything;
+`omasushi clean` takes the symlinks back out and restores the `.bak` originals.
 
 ## Install
 
@@ -127,6 +128,8 @@ omasushi status [--json]             where am I: omakases + their git state, thi
                                      machine's setup, pending/unrecorded counts
 omasushi plan [--json]               diff (json is what the bar widget reads)
 omasushi apply                       make it so
+omasushi clean [name] [--dry-run]    undo apply's links: remove the symlinks, put
+                                     .bak originals back (never uninstalls)
 omasushi export [--to omakase] [--host name]
                                      record installed things into an omakase (add-only)
 omasushi init [dir]                  scaffold an omakase
