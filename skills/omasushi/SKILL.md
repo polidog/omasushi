@@ -22,6 +22,9 @@ omasushi plan [--json]           # diff. `?` lines are installed-but-unrecorded 
 omasushi apply                   # install what is missing, symlink files/skills/commands
 omasushi export [--to <omakase>] [--host <name>]   # record this machine into an omakase (add-only)
 omasushi init [dir]              # scaffold a new omakase repo
+omasushi publish [name|owner/repo|url|path] [--print] [--web URL]
+                                 # register on omasushi-web: resolves the repo URL (origin of ./omasushi.yaml's
+                                 # checkout, or the omakase in use), warns if unpushed, opens <web>/new?url=… in a browser
 
 omasushi -f path/omasushi.yaml plan   # single-manifest mode (developing an omakase)
 omasushi -H <hostname> plan            # resolve as another host
@@ -35,7 +38,7 @@ Omakases are cloned to `~/.local/share/omasushi/omakases/<name>`; the list lives
 1. **Installed something on machine A** → `omasushi plan` shows `?` → `omasushi export` → commit & push the omakase
 2. **Bring machine B up** → `omasushi update` → `omasushi plan` → `omasushi apply`
 3. **Fresh machine** → `go install github.com/polidog/omasushi/cmd/omasushi@latest` → `omasushi use owner/repo` → `omasushi apply`
-4. **Publish your setup** → `omasushi init my-omakase` → copy dotfiles under `files/`, skills under `skills/` → `omasushi -f my-omakase/omasushi.yaml export` → push
+4. **Publish your setup** → `omasushi init my-omakase` → copy dotfiles under `files/`, skills under `skills/` → `omasushi -f my-omakase/omasushi.yaml export` → push → `omasushi publish` (registration on omasushi-web needs a GitHub/GitLab sign-in, so it finishes in the browser; use `--print` when there is no display)
 
 When the user says "sync", **show `plan` first, then run `apply`** — apply runs yay and
 git clone, so do not run it without the user seeing the plan.
@@ -92,4 +95,5 @@ Several omakases stack in `use` order; a later omakase wins for the same key/des
 - `cmd/omasushi/probe.go` — read the real machine (`State`). Add a `probeXxx` here for a new target
 - `cmd/omasushi/plan.go` — diff → `Action{Kind, Desc, Run}`; `omakaseLinks` expands files/skills/commands
 - `cmd/omasushi/main.go` — CLI, `export`, `init`
+- `cmd/omasushi/publish.go` — `publish`: repo URL resolution/canonicalisation and the omasushi-web hand-off (`webURL` default, `$OMASUSHI_WEB_URL`, `--web`)
 - `manifest.json`, `Panel.qml`, `Model.js` (repo root) — Omarchy bar widget (`omarchy plugin add https://github.com/polidog/omasushi.git`) that shows pending actions and runs apply in a floating terminal

@@ -23,6 +23,9 @@ omakases:
   update                      git pull every remote omakase
   remove <name>               forget an omakase (deletes its managed checkout)
   init [dir]                  scaffold a new omakase repository
+  publish [<name>|<repo>|<path>]
+                              put an omakase on omasushi-web: opens the
+                              registration page prefilled with its repo URL
 
 machine:
   status [--json]             where am I: omakases, their git state, this
@@ -81,6 +84,9 @@ func main() {
 		}
 		die(cfg.Remove(args[0]))
 		fmt.Println("removed", args[0])
+		return
+	case "publish":
+		die(publishCmd(cfg, *file, args))
 		return
 	}
 
