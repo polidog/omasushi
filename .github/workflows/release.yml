@@ -1,0 +1,82 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. v0.2.0 (tag is created for you)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            v="${{ inputs.version }}"
+          else
+            v="${GITHUB_REF_NAME}"
+          fi
+          case "$v" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::version must look like v1.2.3, got '$v'"; exit 1 ;; esac
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Check manifest.json version matches
+        run: |
+          want="${{ steps.v.outputs.version }}"; want="${want#v}"
+          have="$(jq -r .version manifest.json)"
+          if [ "$have" != "$want" ]; then
+            echo "::error file=manifest.json::manifest.json version is $have but releasing $want — bump it first"
+            exit 1
+          fi
+
+      - name: Create tag (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/$v" >/dev/null; then
+            echo "::error::tag $v already exists"; exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$v" -m "$v"
+          git push origin "$v"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: go test ./...
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            name="omasushi-${VERSION}-linux-${arch}"
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 \
+              go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "dist/$name/omasushi" ./cmd/omasushi
+            cp LICENSE README.md "dist/$name/"
+            tar -C dist -czf "dist/$name.tar.gz" "$name"
+            rm -r "dist/$name"
+          done
+          (cd dist && sha256sum *.tar.gz > checksums.txt && cat checksums.txt)
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.v.outputs.version }}
+          name: ${{ steps.v.outputs.version }}
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
