@@ -52,6 +52,16 @@ takes one, and stacks with parts from other people's repos.
 
 ## Install
 
+Prebuilt binaries for Linux (amd64 / arm64) are on the
+[releases page](https://github.com/polidog/omasushi/releases):
+
+```sh
+curl -fsSL https://github.com/polidog/omasushi/releases/latest/download/omasushi-$(curl -fsSL https://api.github.com/repos/polidog/omasushi/releases/latest | jq -r .tag_name)-linux-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz \
+  | tar -xz --strip-components=1 -C ~/.local/bin --wildcards '*/omasushi'
+```
+
+Or build from source:
+
 ```sh
 go install github.com/polidog/omasushi/cmd/omasushi@latest
 ```
@@ -138,6 +148,19 @@ omasushi publish [name|repo|path] [--open|--browser|--dry-run] [--web URL]
 omasushi -f omasushi.yaml <cmd>      single-manifest mode, for working inside an omakase
 omasushi -H <host> <cmd>             resolve hosts.<host> as if on that machine
 ```
+
+## Releasing
+
+Bump `version` in `manifest.json`, then either push a tag or run the
+[release workflow](https://github.com/polidog/omasushi/actions/workflows/release.yml)
+from the Actions tab with the version as input (it creates the tag for you):
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+CI checks that the tag matches `manifest.json`, builds `omasushi-vX.Y.Z-linux-{amd64,arm64}.tar.gz`
+with `checksums.txt`, and publishes a GitHub Release with auto-generated notes.
 
 ## Notes
 
