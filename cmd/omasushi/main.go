@@ -22,7 +22,7 @@ omakases:
                               add an omakase (clone it, or point at a local dir);
                               owner/repo takes every part of a split repository,
                               owner/repo/herdr just that one
-  list                        show omakases in use
+  list                        show omakases in use (name, source, checkout)
   update                      git pull every remote omakase
   remove <name>               forget an omakase (deletes its managed checkout)
   init [dir]                  scaffold a new omakase repository
@@ -80,7 +80,7 @@ func main() {
 		rs, err := cfg.Use(args[0])
 		die(err)
 		for _, r := range rs {
-			fmt.Printf("using %s (%s)\n", r.Name, r.Dir)
+			fmt.Printf("using %s from %s (%s)\n", r.Name, r.Source, tildify(r.Dir))
 		}
 		return
 	case "remove":
@@ -108,7 +108,7 @@ func main() {
 			if r.Local {
 				kind = "local"
 			}
-			fmt.Printf("%-24s %-6s %s\n", r.Name, kind, r.Dir)
+			fmt.Printf("%-28s %-6s %-44s %s\n", r.Name, kind, r.Source, tildify(r.Dir))
 		}
 	case "update":
 		die(Update(omakases))

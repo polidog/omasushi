@@ -32,7 +32,7 @@ omasushi -f path/omasushi.yaml plan   # single-manifest mode (developing an omak
 omasushi -H <hostname> plan            # resolve as another host
 ```
 
-Omakases are cloned to `~/.local/share/omasushi/omakases/<repo>` (one checkout per repository,
+Omakases are cloned to `~/.local/share/omasushi/omakases/<owner>/<repo>` (one checkout per repository,
 shared by its parts); the list lives in `~/.config/omasushi/config.yaml` as `{name, source, part}`.
 With no omakase configured, `./omasushi.yaml` is used.
 
