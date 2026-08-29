@@ -29,13 +29,31 @@ func TestParseSource(t *testing.T) {
 		if src.Repo != c.repo || src.Part != c.part || src.Target != c.target || src.Local {
 			t.Errorf("%q: got %+v", c.in, src)
 		}
-		if src.Name != "omakase" && c.in != "https://codeberg.org/a/b/c" {
-			t.Errorf("%q: name %q", c.in, src.Name)
+		wantName := "polidog/omakase"
+		if c.in == "https://codeberg.org/a/b/c" {
+			wantName = "a/b/c"
+		}
+		if src.Name != wantName {
+			t.Errorf("%q: name %q, want %q", c.in, src.Name, wantName)
 		}
 	}
 	for _, bad := range []string{"", "polidog", "polidog/omakase/../x", "polidog/omakase/.git"} {
 		if _, err := parseSource(bad); err == nil {
 			t.Errorf("%q: want error", bad)
+		}
+	}
+}
+
+func TestRepoPath(t *testing.T) {
+	cases := map[string]string{
+		"https://github.com/polidog/omasushi.git": "polidog/omasushi",
+		"git@github.com:Polidog/omasushi":         "polidog/omasushi",
+		"ssh://git@gitlab.com/a/b.git":            "a/b",
+		"https://codeberg.org/a/b/c":              "a/b/c",
+	}
+	for in, want := range cases {
+		if got := repoPath(in); got != want {
+			t.Errorf("repoPath(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

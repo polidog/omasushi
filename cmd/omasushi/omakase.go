@@ -16,7 +16,7 @@ import (
 // omakases can be in use at once; they are layered in config order, later
 // ones winning.
 type Omakase struct {
-	Name     string // repo, or repo/part
+	Name     string // owner/repo, or owner/repo/part (base dir name for local omakases)
 	Source   string // what the user typed for the repository: owner/repo, URL, or local path
 	Part     string // sub-directory inside the repository ("" = the root manifest)
 	Repo     string // the checkout (git root); Update pulls here
@@ -92,7 +92,7 @@ func (c *Config) Save() error {
 // source is a parsed omakase source: the repository plus an optional part.
 type source struct {
 	Repo   string // what to record: owner/repo, URL, or local path (part stripped)
-	Name   string // repository name (checkout directory name)
+	Name   string // owner/repo (checkout directory under omakasesDir); base name for local dirs
 	Target string // git URL or absolute local dir
 	Local  bool
 	Part   string // sub-directory, "" for the root
@@ -142,8 +142,23 @@ func parseSource(s string) (source, error) {
 	if err := checkPart(src.Part); err != nil {
 		return source{}, err
 	}
-	src.Name = strings.TrimSuffix(filepath.Base(normalizeGitURL(src.Target)), ".git")
+	src.Name = repoPath(src.Target)
 	return src, nil
+}
+
+// repoPath is the host-less path of a git URL: https://github.com/a/b.git
+// and git@github.com:a/b both give "a/b". Checkouts live at
+// omakasesDir()/<repoPath>, so the same repository name under two owners
+// never collides.
+func repoPath(u string) string {
+	for _, p := range []string{"ssh://", "git://"} {
+		u = strings.TrimPrefix(strings.TrimSpace(u), p)
+	}
+	n := strings.TrimPrefix(normalizeGitURL(u), "git@")
+	if i := strings.Index(n, "/"); i >= 0 {
+		n = n[i+1:]
+	}
+	return strings.Trim(n, "/")
 }
 
 // splitURLPart splits https://github.com/owner/repo/part into the repository
@@ -383,6 +398,7 @@ func (c *Config) Remove(name string) error {
 		dir := filepath.Join(omakasesDir(), src.Name)
 		if strings.HasPrefix(dir, omakasesDir()) {
 			os.RemoveAll(dir)
+			os.Remove(filepath.Dir(dir)) // owner dir, only if now empty
 		}
 	}
 	return c.Save()
