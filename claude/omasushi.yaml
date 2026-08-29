@@ -1,6 +1,7 @@
-# Claude Code skill for driving omasushi (-> ~/.claude/skills/omasushi).
+# Skill for driving omasushi, linked for the Omarchy default agent
+# (~/.claude/skills/omasushi, ~/.codex/skills/omasushi, ...).
 name: omasushi/claude
-description: Claude Code skill that knows the omasushi CLI and omasushi.yaml.
+description: Agent skill (Claude Code, Codex, ...) that knows the omasushi CLI and omasushi.yaml.
 
-claude:
+agent:
   skills: skills

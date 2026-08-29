@@ -26,10 +26,11 @@ type link struct {
 func Plan(omakases []Omakase, host string, have *State) (actions []Action, extras []string) {
 	var want Overlay
 	var links []link
+	agent := resolveAgent(omakases, host)
 	for _, r := range omakases {
 		o := r.Manifest.Resolve(host)
 		want = want.merge(o)
-		links = append(links, omakaseLinks(r, o)...)
+		links = append(links, omakaseLinks(r, o, agent)...)
 	}
 
 	var aur, pacman []string
@@ -167,10 +168,42 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 	return actions, extras
 }
 
-// omakaseLinks expands files:, claude.skills and claude.commands of one
-// omakase into concrete symlinks. Later omakases override earlier ones for the
-// same destination (handled by order in Plan: the last link wins on apply).
-func omakaseLinks(r Omakase, o Overlay) []link {
+// agentDirs is where each Omarchy default agent looks for skills (a directory
+// per skill holding SKILL.md, the format shared by all of them) and for
+// prompt-style commands (*.md); "" means the agent has no such place.
+var agentDirs = map[string]struct{ skills, commands string }{
+	"claude":   {"~/.claude/skills", "~/.claude/commands"},
+	"codex":    {"~/.codex/skills", "~/.codex/prompts"},
+	"gemini":   {"~/.gemini/skills", ""},
+	"copilot":  {"~/.copilot/skills", ""},
+	"opencode": {"~/.config/opencode/skill", "~/.config/opencode/command"},
+}
+
+// resolveAgent decides which agent the agent: section is for: the stacked
+// omakases' omarchy.defaults.agent (what apply will make the default), else
+// the machine's current default, else claude.
+func resolveAgent(omakases []Omakase, host string) string {
+	var want Overlay
+	for _, r := range omakases {
+		want = want.merge(r.Manifest.Resolve(host))
+	}
+	if want.Omarchy.Defaults.Agent != "" {
+		return want.Omarchy.Defaults.Agent
+	}
+	if b, err := os.ReadFile(expandHome("~/.config/omarchy/defaults/agent")); err == nil {
+		if a := strings.TrimSpace(string(b)); a != "" {
+			return a
+		}
+	}
+	return "claude"
+}
+
+// omakaseLinks expands files:, claude.{skills,commands} and
+// agent.{skills,commands} of one omakase into concrete symlinks. Later omakases
+// override earlier ones for the same destination (handled by order in Plan:
+// the last link wins on apply). agent is the resolved default agent, which
+// picks the destination of the agent: section.
+func omakaseLinks(r Omakase, o Overlay, agent string) []link {
 	var out []link
 	srcs := make([]string, 0, len(o.Files))
 	for s := range o.Files {
@@ -181,26 +214,45 @@ func omakaseLinks(r Omakase, o Overlay) []link {
 		src, _ := filepath.Abs(filepath.Join(r.Dir, s))
 		out = append(out, link{"file-link", r.Name, fmt.Sprintf("%s -> %s", s, o.Files[s]), src, expandHome(o.Files[s])})
 	}
-	if o.Claude.Skills != "" {
-		dir := filepath.Join(r.Dir, o.Claude.Skills)
+	out = append(out, agentLinks(r, o.Claude, agentDirs["claude"].skills, agentDirs["claude"].commands)...)
+	if o.Agent.Skills != "" || o.Agent.Commands != "" {
+		d, ok := agentDirs[agent]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "%s: agent.skills/commands: no known skills directory for agent %q; skipped\n", r.Name, agent)
+		} else {
+			if o.Agent.Commands != "" && d.commands == "" {
+				fmt.Fprintf(os.Stderr, "%s: agent.commands: %s has no prompt-commands directory; skipped\n", r.Name, agent)
+			}
+			out = append(out, agentLinks(r, o.Agent, d.skills, d.commands)...)
+		}
+	}
+	return out
+}
+
+// agentLinks links each skill directory of c.Skills under skillsDir and each
+// *.md of c.Commands under commandsDir (either "" = skip).
+func agentLinks(r Omakase, c Claude, skillsDir, commandsDir string) []link {
+	var out []link
+	if c.Skills != "" && skillsDir != "" {
+		dir := filepath.Join(r.Dir, c.Skills)
 		for _, e := range readDirSorted(dir) {
 			if !e.IsDir() {
 				continue
 			}
 			src := filepath.Join(dir, e.Name())
-			dst := expandHome("~/.claude/skills/" + e.Name())
-			out = append(out, link{"skill-link", r.Name, fmt.Sprintf("%s -> ~/.claude/skills/%s", filepath.Join(o.Claude.Skills, e.Name()), e.Name()), src, dst})
+			dst := expandHome(skillsDir + "/" + e.Name())
+			out = append(out, link{"skill-link", r.Name, fmt.Sprintf("%s -> %s/%s", filepath.Join(c.Skills, e.Name()), skillsDir, e.Name()), src, dst})
 		}
 	}
-	if o.Claude.Commands != "" {
-		dir := filepath.Join(r.Dir, o.Claude.Commands)
+	if c.Commands != "" && commandsDir != "" {
+		dir := filepath.Join(r.Dir, c.Commands)
 		for _, e := range readDirSorted(dir) {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 				continue
 			}
 			src := filepath.Join(dir, e.Name())
-			dst := expandHome("~/.claude/commands/" + e.Name())
-			out = append(out, link{"command-link", r.Name, fmt.Sprintf("%s -> ~/.claude/commands/%s", filepath.Join(o.Claude.Commands, e.Name()), e.Name()), src, dst})
+			dst := expandHome(commandsDir + "/" + e.Name())
+			out = append(out, link{"command-link", r.Name, fmt.Sprintf("%s -> %s/%s", filepath.Join(c.Commands, e.Name()), commandsDir, e.Name()), src, dst})
 		}
 	}
 	return out

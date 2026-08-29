@@ -9,4 +9,4 @@ description: The omasushi CLI's own bar widget and Claude Code skill.
 
 parts:
   - plugin   # Omarchy bar widget
-  - claude   # Claude Code skill for driving omasushi
+  - claude   # skill for driving omasushi (Claude Code, Codex, ...)

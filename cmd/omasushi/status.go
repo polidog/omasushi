@@ -84,8 +84,9 @@ func gatherStatus(omakases []Omakase, host string, have *State) Status {
 	for _, a := range actions {
 		st.Sync.PendingKind[a.Kind]++
 	}
+	agent := resolveAgent(omakases, host)
 	for _, r := range omakases {
-		for _, l := range omakaseLinks(r, r.Manifest.Resolve(host)) {
+		for _, l := range omakaseLinks(r, r.Manifest.Resolve(host), agent) {
 			st.Sync.Links++
 			if cur, err := os.Readlink(l.dst); err == nil && cur == l.src {
 				st.Sync.Linked++

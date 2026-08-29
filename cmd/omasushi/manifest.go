@@ -29,6 +29,7 @@ type Manifest struct {
 	Omarchy     Omarchy            `yaml:"omarchy,omitempty"`
 	Herdr       Herdr              `yaml:"herdr,omitempty"`
 	Claude      Claude             `yaml:"claude,omitempty"`
+	Agent       Claude             `yaml:"agent,omitempty"`
 	Files       map[string]string  `yaml:"files,omitempty"`
 	Hosts       map[string]Overlay `yaml:"hosts,omitempty"`
 }
@@ -110,6 +111,7 @@ type Overlay struct {
 	Omarchy  Omarchy           `yaml:"omarchy,omitempty"`
 	Herdr    Herdr             `yaml:"herdr,omitempty"`
 	Claude   Claude            `yaml:"claude,omitempty"`
+	Agent    Claude            `yaml:"agent,omitempty"`
 	Files    map[string]string `yaml:"files,omitempty"`
 }
 
@@ -167,6 +169,10 @@ type HerdrPlugin struct {
 // Commands is a directory whose *.md files are linked to
 // ~/.claude/commands/<name>.md. Linking per entry (not the whole directory)
 // lets the machine keep its own skills alongside the shared ones.
+//
+// The same shape under agent: is linked for whichever agent is the Omarchy
+// default (omarchy.defaults.agent, else the machine's own choice), so one
+// skills/ directory serves Claude Code, Codex, Gemini CLI … (see agentDirs).
 type Claude struct {
 	Skills   string `yaml:"skills,omitempty"`
 	Commands string `yaml:"commands,omitempty"`
@@ -205,6 +211,7 @@ func (m *Manifest) Resolve(host string) Overlay {
 		Omarchy:  m.Omarchy,
 		Herdr:    m.Herdr,
 		Claude:   m.Claude,
+		Agent:    m.Agent,
 		Files:    map[string]string{},
 	}
 	for k, v := range m.Files {
@@ -233,6 +240,12 @@ func (r Overlay) merge(o Overlay) Overlay {
 	}
 	if o.Claude.Commands != "" {
 		r.Claude.Commands = o.Claude.Commands
+	}
+	if o.Agent.Skills != "" {
+		r.Agent.Skills = o.Agent.Skills
+	}
+	if o.Agent.Commands != "" {
+		r.Agent.Commands = o.Agent.Commands
 	}
 	if r.Files == nil {
 		r.Files = map[string]string{}

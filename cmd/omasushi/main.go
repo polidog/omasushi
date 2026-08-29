@@ -293,7 +293,7 @@ func export(omakases []Omakase, target *Omakase, have *State, host, toHost strin
 	m := target.Manifest
 	var t *Overlay
 	if toHost == "" {
-		t = &Overlay{Packages: m.Packages, Omarchy: m.Omarchy, Herdr: m.Herdr, Claude: m.Claude, Files: m.Files}
+		t = &Overlay{Packages: m.Packages, Omarchy: m.Omarchy, Herdr: m.Herdr, Claude: m.Claude, Agent: m.Agent, Files: m.Files}
 	} else {
 		if m.Hosts == nil {
 			m.Hosts = map[string]Overlay{}
@@ -407,9 +407,10 @@ omarchy:
 herdr:
   plugins: []         # - { source: owner/repo }
 
-claude:
-  skills: skills      # each subdirectory -> ~/.claude/skills/<name>
-  commands: commands  # each *.md          -> ~/.claude/commands/<name>.md
+agent:                # for the Omarchy default agent (omarchy.defaults.agent, else this machine's)
+  skills: skills      # each subdirectory -> ~/.claude/skills/<name>, ~/.codex/skills/<name>, ...
+  commands: commands  # each *.md          -> ~/.claude/commands/<name>.md, ~/.codex/prompts/<name>.md
+# claude: { skills: skills, commands: commands }   # Claude Code only, whatever the default agent
 
 files: {}             # files/kitty.conf: ~/.config/kitty/kitty.conf
 
