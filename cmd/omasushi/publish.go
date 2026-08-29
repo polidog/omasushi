@@ -17,8 +17,9 @@ import (
 )
 
 // webURL is where omasushi-web lives. Overridable at build time
-// (-ldflags "-X main.webURL=https://…"), by $OMASUSHI_WEB_URL, or --web.
-var webURL = "http://localhost:3000"
+// (-ldflags "-X main.webURL=https://…"), by $OMASUSHI_WEB_URL, or --web
+// (http://localhost:3000 for a local omasushi-web).
+var webURL = "https://omasushi.dev"
 
 // publishCmd puts an omakase on the omasushi-web conveyor belt.
 //

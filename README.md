@@ -74,18 +74,18 @@ git init && git add . && git commit -m "my setup" && gh repo create --public --p
 
 Anyone can now `omasushi use you/my-omakase`.
 
-To put it on the [omasushi-web](https://github.com/polidog/omasushi-web) conveyor belt
-where others can find it:
+To put it on the [omasushi.dev](https://omasushi.dev) conveyor belt where others can find it:
 
 ```sh
-omasushi publish            # registers this repo on omasushi-web, prints the plate's URL
+omasushi publish            # registers this repo on omasushi.dev, prints the plate's URL
 ```
 
 `publish` reads the repo URL from `origin`, checks that `omasushi.yaml` is committed
 and pushed, and POSTs it to the site's `/api/omakase` — no account needed; the site
 fetches `omasushi.yaml` from the public repo itself. `--open` opens the new plate in
 your browser, `--browser` uses the web form instead of the API, `--dry-run` only
-prints the URL; `--web URL` or `$OMASUSHI_WEB_URL` points at another instance.
+prints the URL; `--web URL` or `$OMASUSHI_WEB_URL` points at another instance
+(e.g. `http://localhost:3000` when hacking on omasushi-web).
 
 ## What an omakase can declare
 
