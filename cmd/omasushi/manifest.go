@@ -50,10 +50,10 @@ type Omarchy struct {
 
 // Defaults mirrors `omarchy default <kind> [value]`. Empty means "don't care".
 type Defaults struct {
-	Agent    string `yaml:"agent,omitempty"`
-	Browser  string `yaml:"browser,omitempty"`
-	Editor   string `yaml:"editor,omitempty"`
-	Terminal string `yaml:"terminal,omitempty"`
+	Agent    string `yaml:"agent,omitempty" json:"agent"`
+	Browser  string `yaml:"browser,omitempty" json:"browser"`
+	Editor   string `yaml:"editor,omitempty" json:"editor"`
+	Terminal string `yaml:"terminal,omitempty" json:"terminal"`
 }
 
 func (d Defaults) merge(o Defaults) Defaults {

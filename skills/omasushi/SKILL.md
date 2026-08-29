@@ -17,6 +17,7 @@ omasushi list                    # omakases in use
 omasushi update                  # git pull remote omakases
 omasushi remove <name>
 
+omasushi status [--json]         # overview: omakases (git branch/commit, modified/behind), machine setup, pending & unrecorded counts
 omasushi plan [--json]           # diff. `?` lines are installed-but-unrecorded extras
 omasushi apply                   # install what is missing, symlink files/skills/commands
 omasushi export [--to <omakase>] [--host <name>]   # record this machine into an omakase (add-only)

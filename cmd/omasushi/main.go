@@ -25,6 +25,8 @@ omakases:
   init [dir]                  scaffold a new omakase repository
 
 machine:
+  status [--json]             where am I: omakases, their git state, this
+                              machine's setup, and how far apart they are
   plan [--json]               show what apply would do
   apply                       install missing packages/plugins, link files/skills
   export [--to <omakase>] [--host <name>]
@@ -99,6 +101,18 @@ func main() {
 		}
 	case "update":
 		die(Update(omakases))
+	case "status":
+		fs := flag.NewFlagSet("status", flag.ExitOnError)
+		asJSON := fs.Bool("json", false, "machine readable output")
+		fs.Parse(args)
+		have, err := Probe()
+		die(err)
+		st := gatherStatus(omakases, *host, have)
+		if *asJSON {
+			printStatusJSON(st)
+		} else {
+			printStatus(st)
+		}
 	case "plan":
 		fs := flag.NewFlagSet("plan", flag.ExitOnError)
 		asJSON := fs.Bool("json", false, "machine readable output")

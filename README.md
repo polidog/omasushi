@@ -74,6 +74,8 @@ See [`omakase-template/omasushi.yaml`](omakase-template/omasushi.yaml) for a com
 ```
 omasushi use <owner/repo|url|path>   add an omakase
 omasushi list | update | remove <name>
+omasushi status [--json]             where am I: omakases + their git state, this
+                                     machine's setup, pending/unrecorded counts
 omasushi plan [--json]               diff (json is what the bar widget reads)
 omasushi apply                       make it so
 omasushi export [--to omakase] [--host name]
