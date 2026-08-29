@@ -1,6 +1,6 @@
 ---
 name: omasushi
-description: Sync an Omarchy machine from shared "omakase" repositories with the `omasushi` CLI — AUR packages, Omarchy plugins/defaults/font, Herdr plugins, dotfiles, and Claude Code skills/commands. Use when the user wants to sync their setup, record what this machine has, set up a new machine, share their config with others, or edit omasushi.yaml.
+description: Sync an Omarchy machine from shared "omakase" repositories with the `omasushi` CLI — AUR packages, Omarchy plugins/defaults/font, Herdr plugins, dotfiles, and AI agent skills/commands (Claude Code, Codex, Gemini CLI, ...). Use when the user wants to sync their setup, record what this machine has, set up a new machine, share their config with others, or edit omasushi.yaml.
 ---
 
 # omasushi
@@ -82,9 +82,15 @@ herdr:
   plugins:
     - source: owner/repo[/subdir]
       ref: optional
-claude:
-  skills: skills                 # each subdir  -> ~/.claude/skills/<name>   (symlink)
-  commands: commands             # each *.md    -> ~/.claude/commands/<name>.md
+agent:                           # for the Omarchy default agent: omarchy.defaults.agent if set,
+                                 # else this machine's `omarchy-default-agent`, else claude
+  skills: skills                 # each subdir  -> ~/.claude/skills/<name> | ~/.codex/skills/<name>
+                                 #                 | ~/.gemini/skills | ~/.copilot/skills | ~/.config/opencode/skill
+  commands: commands             # each *.md    -> ~/.claude/commands/ | ~/.codex/prompts/ | ~/.config/opencode/command/
+                                 #                 (gemini/copilot: no prompts dir, skipped with a note)
+claude:                          # same shape, but always Claude Code (~/.claude) whatever the default agent
+  skills: skills
+  commands: commands
 files:
   files/kitty/kitty.conf: ~/.config/kitty/kitty.conf   # symlink; existing file moved to .bak
 hosts:
@@ -106,7 +112,7 @@ Several omakases stack in `use` order; a later omakase wins for the same key/des
 
 - Never put secrets (tokens, `calendar-sync.json`, …) under `files:` — omakases are meant to be public
 - To share a file: copy it into the omakase's `files/`, then add the mapping; `apply` swaps the original for a symlink
-- Skills/commands are linked **per entry**, so the machine's own `~/.claude/skills` stay untouched
+- Skills/commands are linked **per entry**, so the machine's own `~/.claude/skills` / `~/.codex/skills` stay untouched
 - `omarchy font set` / `omarchy theme set` rewrite terminal configs with `sed -i`, which turns the symlink back into a real file. Copy the new file into the omakase and `apply` again (plan shows the `file-link` again)
 - `font` / `defaults` empty means "don't care". `export` only fills them when the base is empty
 - Machine-specific things (GPU drivers, monitor layouts) belong under `hosts.<hostname>`

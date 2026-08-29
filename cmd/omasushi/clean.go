@@ -15,8 +15,9 @@ import (
 // were not recorded). Returns the destinations it unlinked.
 func Unlink(omakases []Omakase, host string, dryRun bool) (undone []string, err error) {
 	var links []link
+	agent := resolveAgent(omakases, host)
 	for _, r := range omakases {
-		links = append(links, omakaseLinks(r, r.Manifest.Resolve(host))...)
+		links = append(links, omakaseLinks(r, r.Manifest.Resolve(host), agent)...)
 	}
 	herdrDir := filepath.Join(expandHome("~"), ".config/herdr") + string(filepath.Separator)
 	hyprDir := filepath.Join(expandHome("~"), ".config/hypr") + string(filepath.Separator)

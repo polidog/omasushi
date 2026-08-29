@@ -25,8 +25,8 @@ parts:
   herdr:
     herdr: { plugins: [{ source: owner/repo }] }
     files: { files/herdr/config.toml: ~/.config/herdr/config.toml }
-  claude:
-    claude: { skills: skills }
+  agent:
+    agent: { skills: skills }
 ```
 
 A part large enough to want its own directory can have one — give it a directory
@@ -72,6 +72,20 @@ Optional bar widget (shows pending actions, applies from the bar):
 omarchy plugin add https://github.com/polidog/omasushi.git --enable
 ```
 
+## Just the skill
+
+To teach your AI agent the omasushi CLI without adopting any omakase:
+
+```sh
+omasushi skill install            # bundled skill -> the Omarchy default agent's global skills
+omasushi skill install --agent claude   # or pick one: claude|codex|gemini|copilot|opencode
+omasushi skill list | update | remove
+```
+
+The skill is embedded in the binary and copied into `~/.claude/skills/omasushi`,
+`~/.codex/skills/omasushi`, … so `go install` is all you need. After a newer
+`go install`, `omasushi skill update` (or plain `omasushi update`) rewrites it.
+
 ## Use someone's omakase
 
 ```sh
@@ -92,7 +106,7 @@ cd my-omakase
 omasushi export             # records this machine's AUR packages, plugins, font, defaults
 cp ~/.config/kitty/kitty.conf files/kitty.conf
 #   then add   files/kitty.conf: ~/.config/kitty/kitty.conf   under files:
-cp -r ~/.claude/skills/my-skill skills/
+cp -r ~/.claude/skills/my-skill skills/   # SKILL.md format is shared by Claude Code, Codex, Gemini CLI …
 git init && git add . && git commit -m "my setup" && gh repo create --public --push
 ```
 
@@ -120,8 +134,9 @@ prints the URL; `--web URL` or `$OMASUSHI_WEB_URL` points at another instance
 | `omarchy.defaults.{agent,browser,editor,terminal}` | `omarchy-default-*` |
 | `omarchy.plugins[]` `{url, enable}` | `omarchy-plugin-add` / `omarchy-plugin-enable` |
 | `herdr.plugins[]` `{source, ref}` | `herdr plugin install` |
-| `claude.skills` (dir) | symlink each subdirectory to `~/.claude/skills/<name>` |
-| `claude.commands` (dir) | symlink each `*.md` to `~/.claude/commands/<name>.md` |
+| `agent.skills` (dir) | symlink each subdirectory into the **default agent's** skills directory: `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, `~/.gemini/skills/<name>`, `~/.copilot/skills/<name>`, `~/.config/opencode/skill/<name>`. The agent is `omarchy.defaults.agent` if any omakase sets it, else this machine's `omarchy-default-agent`, else claude |
+| `agent.commands` (dir) | symlink each `*.md` likewise: `~/.claude/commands/`, `~/.codex/prompts/`, `~/.config/opencode/command/` (agents without a prompts directory are skipped with a note) |
+| `claude.skills` / `claude.commands` (dir) | same, but always for Claude Code (`~/.claude/skills`, `~/.claude/commands`), whatever the default agent |
 | `files` `{omakase-path: ~/dest}` | symlink; an existing real file is moved to `.bak` |
 | `hosts.<hostname>` | overlay merged onto the base for that machine |
 | `parts` (root only) | feature-sized pieces, written inline or as sub-directories with their own `omasushi.yaml`; `use owner/repo` takes them all, `use owner/repo/<part>` one. A manifest that declares parts is only their index — its own sections are not applied |
@@ -145,6 +160,9 @@ omasushi export [--to omakase] [--host name]
 omasushi init [dir]                  scaffold an omakase
 omasushi publish [name|repo|path] [--open|--browser|--dry-run] [--web URL]
                                      register an omakase on omasushi-web
+omasushi skill install|update|remove|list [--agent name]
+                                     copy the bundled omasushi skill into an agent's
+                                     global skills dir (no omakase needed)
 omasushi -f omasushi.yaml <cmd>      single-manifest mode, for working inside an omakase
 omasushi -H <host> <cmd>             resolve hosts.<host> as if on that machine
 ```
@@ -169,8 +187,9 @@ with `checksums.txt`, and publishes a GitHub Release with auto-generated notes.
 - `omarchy font set` / `theme set` rewrite terminal configs in place, turning a symlink
   back into a file. Copy the new file into the omakase and `apply` again.
 - This repo is itself a split omakase, of what belongs to the tool: `plugin/` (bar widget)
-  and `claude/` (a Claude Code skill for driving omasushi, in
-  [`claude/skills/omasushi`](claude/skills/omasushi)). `omasushi use polidog/omasushi`
+  and `claude/` (a skill for driving omasushi, in
+  [`claude/skills/omasushi`](claude/skills/omasushi), linked for whichever agent is the
+  Omarchy default: Claude Code, Codex, …). `omasushi use polidog/omasushi`
   installs both, `omasushi use polidog/omasushi/claude` just the skill. A machine setup to
   copy from lives in [polidog/omakase](https://github.com/polidog/omakase).
 

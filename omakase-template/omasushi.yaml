@@ -35,9 +35,13 @@ herdr:
   plugins: []
   # - source: owner/repo          # owner/repo[/subdir], optional ref:
 
-claude:
-  skills: skills        # skills/<name>/SKILL.md -> ~/.claude/skills/<name>
-  commands: commands    # commands/<name>.md     -> ~/.claude/commands/<name>.md
+agent:                  # linked for the Omarchy default agent (omarchy.defaults.agent above,
+                        # else this machine's): claude -> ~/.claude, codex -> ~/.codex, ...
+  skills: skills        # skills/<name>/SKILL.md -> ~/.claude/skills/<name> | ~/.codex/skills/<name>
+  commands: commands    # commands/<name>.md     -> ~/.claude/commands/<name>.md | ~/.codex/prompts/<name>.md
+# claude:               # the same, but always for Claude Code regardless of the default agent
+#   skills: skills
+#   commands: commands
 
 files: {}
   # files/kitty.conf: ~/.config/kitty/kitty.conf

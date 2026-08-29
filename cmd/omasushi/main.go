@@ -41,6 +41,11 @@ machine:
   export [--to <omakase>] [--host <name>]
                               record this machine's installed packages/plugins
                               into an omakase (--host writes under hosts.<name>)
+  skill install|update|remove|list [--agent <name>]
+                              put the bundled omasushi skill into the default
+                              agent's global skills (~/.claude/skills,
+                              ~/.codex/skills, ...) — no omakase needed;
+                              update rewrites it after a newer go install
   version
 
 -f path      use a single manifest instead of the configured omakases
@@ -104,6 +109,9 @@ func main() {
 	case "publish":
 		die(publishCmd(cfg, *file, args))
 		return
+	case "skill":
+		die(skillCmd(args))
+		return
 	}
 
 	omakases, err := activeOmakases(cfg, *file)
@@ -123,6 +131,7 @@ func main() {
 		}
 	case "update":
 		die(Update(omakases))
+		die(updateInstalledSkills())
 	case "status":
 		fs := flag.NewFlagSet("status", flag.ExitOnError)
 		asJSON := fs.Bool("json", false, "machine readable output")
@@ -293,7 +302,7 @@ func export(omakases []Omakase, target *Omakase, have *State, host, toHost strin
 	m := target.Manifest
 	var t *Overlay
 	if toHost == "" {
-		t = &Overlay{Packages: m.Packages, Omarchy: m.Omarchy, Herdr: m.Herdr, Claude: m.Claude, Files: m.Files}
+		t = &Overlay{Packages: m.Packages, Omarchy: m.Omarchy, Herdr: m.Herdr, Claude: m.Claude, Agent: m.Agent, Files: m.Files}
 	} else {
 		if m.Hosts == nil {
 			m.Hosts = map[string]Overlay{}
@@ -407,9 +416,10 @@ omarchy:
 herdr:
   plugins: []         # - { source: owner/repo }
 
-claude:
-  skills: skills      # each subdirectory -> ~/.claude/skills/<name>
-  commands: commands  # each *.md          -> ~/.claude/commands/<name>.md
+agent:                # for the Omarchy default agent (omarchy.defaults.agent, else this machine's)
+  skills: skills      # each subdirectory -> ~/.claude/skills/<name>, ~/.codex/skills/<name>, ...
+  commands: commands  # each *.md          -> ~/.claude/commands/<name>.md, ~/.codex/prompts/<name>.md
+# claude: { skills: skills, commands: commands }   # Claude Code only, whatever the default agent
 
 files: {}             # files/kitty.conf: ~/.config/kitty/kitty.conf
 
