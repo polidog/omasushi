@@ -10,3 +10,11 @@ omarchy:
 
 claude:
   skills: skills
+
+herdr:
+  plugins:
+    - source: szrenwei/herdr-agent-metrics    # [[keys.command]] herdr-agent-metrics.refresh
+    - source: polidog/herdr-gh-issue-label    # $issue sidebar row
+
+files:
+  files/herdr/config.toml: ~/.config/herdr/config.toml   # tmux-style keybindings (prefix ctrl+b)
