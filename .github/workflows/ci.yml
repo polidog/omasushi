@@ -1,0 +1,40 @@
+name: ci
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: test -z "$(gofmt -l ./cmd)"
+      - run: go vet ./...
+      - run: go build ./...
+      - run: sudo apt-get install -y -qq jq && jq -e '.schemaVersion == 1 and .id == "polidog.omasushi"' manifest.json
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o dist/omasushi-linux-$arch ./cmd/omasushi
+          done
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

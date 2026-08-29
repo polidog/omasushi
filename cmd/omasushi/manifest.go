@@ -1,0 +1,230 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// ManifestFile is the file name a recipe repository carries at its root.
+const ManifestFile = "omasushi.yaml"
+
+// Manifest is the desired state of a machine, as declared by one recipe.
+// Hosts holds per-host overlays that are merged onto the base when
+// resolved for a given hostname.
+type Manifest struct {
+	Name        string             `yaml:"name,omitempty"`
+	Description string             `yaml:"description,omitempty"`
+	Packages    Packages           `yaml:"packages,omitempty"`
+	Omarchy     Omarchy            `yaml:"omarchy,omitempty"`
+	Herdr       Herdr              `yaml:"herdr,omitempty"`
+	Claude      Claude             `yaml:"claude,omitempty"`
+	Files       map[string]string  `yaml:"files,omitempty"`
+	Hosts       map[string]Overlay `yaml:"hosts,omitempty"`
+}
+
+// Overlay is a Manifest without metadata or Hosts; used as the value of
+// hosts.<name> and as the result of Resolve.
+type Overlay struct {
+	Packages Packages          `yaml:"packages,omitempty"`
+	Omarchy  Omarchy           `yaml:"omarchy,omitempty"`
+	Herdr    Herdr             `yaml:"herdr,omitempty"`
+	Claude   Claude            `yaml:"claude,omitempty"`
+	Files    map[string]string `yaml:"files,omitempty"`
+}
+
+type Packages struct {
+	Pacman []string `yaml:"pacman,omitempty"`
+	Aur    []string `yaml:"aur,omitempty"`
+}
+
+type Omarchy struct {
+	Font     string          `yaml:"font,omitempty"` // value of `omarchy font set`; empty = don't care
+	Defaults Defaults        `yaml:"defaults,omitempty"`
+	Plugins  []OmarchyPlugin `yaml:"plugins,omitempty"`
+}
+
+// Defaults mirrors `omarchy default <kind> [value]`. Empty means "don't care".
+type Defaults struct {
+	Agent    string `yaml:"agent,omitempty"`
+	Browser  string `yaml:"browser,omitempty"`
+	Editor   string `yaml:"editor,omitempty"`
+	Terminal string `yaml:"terminal,omitempty"`
+}
+
+func (d Defaults) merge(o Defaults) Defaults {
+	if o.Agent != "" {
+		d.Agent = o.Agent
+	}
+	if o.Browser != "" {
+		d.Browser = o.Browser
+	}
+	if o.Editor != "" {
+		d.Editor = o.Editor
+	}
+	if o.Terminal != "" {
+		d.Terminal = o.Terminal
+	}
+	return d
+}
+
+type OmarchyPlugin struct {
+	URL    string `yaml:"url"`
+	Enable bool   `yaml:"enable,omitempty"`
+}
+
+type Herdr struct {
+	Plugins []HerdrPlugin `yaml:"plugins,omitempty"`
+}
+
+type HerdrPlugin struct {
+	Source string `yaml:"source"` // owner/repo[/subdir]
+	Ref    string `yaml:"ref,omitempty"`
+}
+
+// Claude shares Claude Code skills and slash commands. Skills is a recipe
+// relative directory whose children are linked to ~/.claude/skills/<name>;
+// Commands is a directory whose *.md files are linked to
+// ~/.claude/commands/<name>.md. Linking per entry (not the whole directory)
+// lets the machine keep its own skills alongside the shared ones.
+type Claude struct {
+	Skills   string `yaml:"skills,omitempty"`
+	Commands string `yaml:"commands,omitempty"`
+}
+
+func LoadManifest(path string) (*Manifest, error) {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return &Manifest{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var m Manifest
+	if err := yaml.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return &m, nil
+}
+
+func (m *Manifest) Save(path string) error {
+	var sb strings.Builder
+	enc := yaml.NewEncoder(&sb)
+	enc.SetIndent(2)
+	if err := enc.Encode(m); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(sb.String()), 0o644)
+}
+
+// Resolve merges the overlay for host onto the base. Lists are unioned,
+// plugin entries are keyed by URL/source with the overlay winning.
+func (m *Manifest) Resolve(host string) Overlay {
+	r := Overlay{
+		Packages: m.Packages,
+		Omarchy:  m.Omarchy,
+		Herdr:    m.Herdr,
+		Claude:   m.Claude,
+		Files:    map[string]string{},
+	}
+	for k, v := range m.Files {
+		r.Files[k] = v
+	}
+	o, ok := m.Hosts[host]
+	if !ok {
+		return r
+	}
+	return r.merge(o)
+}
+
+// merge layers o on top of r. Used both for host overlays and for stacking
+// several recipes: later wins on scalars, lists are unioned.
+func (r Overlay) merge(o Overlay) Overlay {
+	r.Packages.Pacman = union(r.Packages.Pacman, o.Packages.Pacman)
+	r.Packages.Aur = union(r.Packages.Aur, o.Packages.Aur)
+	if o.Omarchy.Font != "" {
+		r.Omarchy.Font = o.Omarchy.Font
+	}
+	r.Omarchy.Defaults = r.Omarchy.Defaults.merge(o.Omarchy.Defaults)
+	r.Omarchy.Plugins = mergeOmarchyPlugins(r.Omarchy.Plugins, o.Omarchy.Plugins)
+	r.Herdr.Plugins = mergeHerdrPlugins(r.Herdr.Plugins, o.Herdr.Plugins)
+	if o.Claude.Skills != "" {
+		r.Claude.Skills = o.Claude.Skills
+	}
+	if o.Claude.Commands != "" {
+		r.Claude.Commands = o.Claude.Commands
+	}
+	if r.Files == nil {
+		r.Files = map[string]string{}
+	}
+	for k, v := range o.Files {
+		r.Files[k] = v
+	}
+	return r
+}
+
+func union(a, b []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range append(append([]string{}, a...), b...) {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func mergeOmarchyPlugins(a, b []OmarchyPlugin) []OmarchyPlugin {
+	idx := map[string]int{}
+	var out []OmarchyPlugin
+	for _, p := range append(append([]OmarchyPlugin{}, a...), b...) {
+		k := normalizeGitURL(p.URL)
+		if i, ok := idx[k]; ok {
+			out[i] = p
+			continue
+		}
+		idx[k] = len(out)
+		out = append(out, p)
+	}
+	return out
+}
+
+func mergeHerdrPlugins(a, b []HerdrPlugin) []HerdrPlugin {
+	idx := map[string]int{}
+	var out []HerdrPlugin
+	for _, p := range append(append([]HerdrPlugin{}, a...), b...) {
+		if i, ok := idx[p.Source]; ok {
+			out[i] = p
+			continue
+		}
+		idx[p.Source] = len(out)
+		out = append(out, p)
+	}
+	return out
+}
+
+// normalizeGitURL makes https://github.com/a/b.git and github.com/a/b compare equal.
+func normalizeGitURL(u string) string {
+	u = strings.TrimSpace(u)
+	u = strings.TrimPrefix(u, "https://")
+	u = strings.TrimPrefix(u, "http://")
+	u = strings.TrimPrefix(u, "git@")
+	u = strings.Replace(u, ":", "/", 1)
+	u = strings.TrimSuffix(u, "/")
+	u = strings.TrimSuffix(u, ".git")
+	return strings.ToLower(u)
+}
+
+func expandHome(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, p[1:])
+	}
+	return p
+}

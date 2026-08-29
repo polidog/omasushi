@@ -1,0 +1,12 @@
+# This repository is itself a recipe: `omasushi use polidog/omasushi` installs
+# the omasushi Claude Code skill and the bar widget.
+name: omasushi
+description: The omasushi CLI's own skill and bar widget.
+
+omarchy:
+  plugins:
+    - url: https://github.com/polidog/omasushi.git
+      enable: true
+
+claude:
+  skills: skills

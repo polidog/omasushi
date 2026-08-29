@@ -1,0 +1,39 @@
+# omasushi recipe — https://github.com/polidog/omasushi
+#
+# Copy this directory, run `omasushi -f omasushi.yaml export` on a machine you
+# like, add your dotfiles under files/ and Claude skills under skills/, push.
+
+name: my-setup
+description: What this setup is about, in one line.
+
+packages:
+  pacman: []            # official repos — written by hand, e.g. [tmux, ripgrep]
+  aur: []               # filled by `omasushi export` from pacman -Qqm
+
+omarchy:
+  # font: "UDEV Gothic NF"        # `omarchy font list` for names; ship the font package above
+  # defaults:
+  #   agent: claude               # pi|omp|opencode|claude|codex|grok|gemini|copilot|crush
+  #   browser: chrome             # chromium|chrome|brave|brave-origin|edge|firefox|zen
+  #   editor: nvim                # code|cursor|zed|sublime_text|helix|vim|emacs|nvim
+  #   terminal: kitty             # foot|ghostty|kitty
+  plugins: []
+  # - url: https://github.com/crmne/omarchy-hyprmoncfg.git
+  #   enable: true
+
+herdr:
+  plugins: []
+  # - source: owner/repo          # owner/repo[/subdir], optional ref:
+
+claude:
+  skills: skills        # skills/<name>/SKILL.md -> ~/.claude/skills/<name>
+  commands: commands    # commands/<name>.md     -> ~/.claude/commands/<name>.md
+
+files: {}
+  # files/kitty.conf: ~/.config/kitty/kitty.conf
+  # files/nvim: ~/.config/nvim   # directories work too
+
+hosts: {}
+  # laptop:
+  #   packages: { aur: [brightnessctl] }
+  #   files: { files/hypr/monitors-laptop.conf: ~/.config/hypr/monitors.conf }
