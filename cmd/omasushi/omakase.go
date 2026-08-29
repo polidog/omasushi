@@ -23,9 +23,19 @@ type Omakase struct {
 	Dir      string // Repo/Part: where omasushi.yaml and its files live
 	Local    bool   // Repo is a user path, not managed by omasushi (never pulled)
 	Manifest *Manifest
+	Root     *Manifest // set for a part written inline: the manifest that declares it
 }
 
 func (r Omakase) ManifestPath() string { return filepath.Join(r.Dir, ManifestFile) }
+
+// Save writes the omakase's manifest back to disk. An inline part is stored in
+// its repository's root manifest, so that whole manifest is what gets written.
+func (r Omakase) Save() error {
+	if r.Root != nil {
+		return r.Root.Save(r.ManifestPath())
+	}
+	return r.Manifest.Save(r.ManifestPath())
+}
 
 // Config is ~/.config/omasushi/config.yaml: the ordered list of omakases in use.
 type Config struct {
@@ -218,9 +228,11 @@ func LoadOmakases(c *Config) ([]Omakase, error) {
 }
 
 // omakasesIn loads src.Part of the checkout at repo; for the root of a
-// repository that declares parts it loads every part instead.
+// repository that declares parts it loads every part instead. A part is either
+// a directory of its own or written inline in the root manifest, in which case
+// it is the repository root narrowed to that part's sections.
 func omakasesIn(src source, repo, name string) ([]Omakase, error) {
-	load := func(part string) (Omakase, error) {
+	dirPart := func(part string) (Omakase, error) {
 		r := Omakase{Name: omakaseName(src.Name, part), Source: src.Repo, Part: part, Repo: repo, Dir: filepath.Join(repo, part), Local: src.Local}
 		if part == "" && name != "" {
 			r.Name = name
@@ -232,22 +244,51 @@ func omakasesIn(src source, repo, name string) ([]Omakase, error) {
 		if err != nil {
 			return r, err
 		}
+		if part != "" {
+			if _, err := os.Stat(r.ManifestPath()); err != nil {
+				return r, fmt.Errorf("omakase %s: %s has no %s", r.Name, r.Dir, ManifestFile)
+			}
+		}
 		r.Manifest = m
 		return r, nil
 	}
-	root, err := load(src.Part)
+	root, err := dirPart("")
 	if err != nil {
 		return nil, err
 	}
-	if src.Part != "" || len(root.Manifest.Parts) == 0 {
+	// An inline part shares the root's directory, so its paths are relative to
+	// the repository root. Manifest points into root.Parts.Inline, which is what
+	// lets Save fold an export back into the root manifest.
+	inlinePart := func(part string) Omakase {
+		return Omakase{
+			Name: omakaseName(src.Name, part), Source: src.Repo, Part: part,
+			Repo: repo, Dir: repo, Local: src.Local,
+			Manifest: root.Manifest.Parts.Inline[part], Root: root.Manifest,
+		}
+	}
+	if src.Part != "" {
+		if _, ok := root.Manifest.Parts.Inline[src.Part]; ok {
+			return []Omakase{inlinePart(src.Part)}, nil
+		}
+		r, err := dirPart(src.Part)
+		if err != nil {
+			return nil, err
+		}
+		return []Omakase{r}, nil
+	}
+	if root.Manifest.Parts.Len() == 0 {
 		return []Omakase{root}, nil
 	}
 	var out []Omakase
-	for _, p := range root.Manifest.Parts {
+	for _, p := range root.Manifest.Parts.Names {
 		if err := checkPart(p); err != nil {
 			return nil, fmt.Errorf("%s: %w", root.ManifestPath(), err)
 		}
-		r, err := load(p)
+		if _, ok := root.Manifest.Parts.Inline[p]; ok {
+			out = append(out, inlinePart(p))
+			continue
+		}
+		r, err := dirPart(p)
 		if err != nil {
 			return nil, err
 		}
@@ -297,8 +338,8 @@ func (c *Config) Use(input string) ([]Omakase, error) {
 			}
 		}
 	}
-	if _, err := os.Stat(filepath.Join(repo, src.Part, ManifestFile)); err != nil {
-		return nil, fmt.Errorf("%s has no %s", filepath.Join(repo, src.Part), ManifestFile)
+	if _, err := os.Stat(filepath.Join(repo, ManifestFile)); err != nil {
+		return nil, fmt.Errorf("%s has no %s", repo, ManifestFile)
 	}
 	rs, err := omakasesIn(src, repo, "")
 	if err != nil {

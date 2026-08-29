@@ -6,11 +6,15 @@
 name: my-setup
 description: What this setup is about, in one line.
 
-# Prefer feature-sized pieces others can mix and match? Split the repository
-# into directories that each carry their own omasushi.yaml, and list them here
+# Prefer feature-sized pieces others can mix and match? Write them under parts:
 # instead of the sections below — `omasushi use you/repo` takes all of them,
-# `omasushi use you/repo/kitty` just one.
-# parts: [kitty, herdr, claude]
+# `omasushi use you/repo/kitty` just one. Paths stay relative to this directory,
+# so files/ below serves every part. A part with an empty value instead lives in
+# a directory of its own, with its own omasushi.yaml and its own files/.
+# parts:
+#   kitty:
+#     files: { files/kitty.conf: ~/.config/kitty/kitty.conf }
+#   nvim:
 
 packages:
   pacman: []            # official repos — written by hand, e.g. [tmux, ripgrep]

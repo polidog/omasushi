@@ -113,3 +113,83 @@ func TestPartsExpandAndConfig(t *testing.T) {
 		t.Error("missing part: want error")
 	}
 }
+
+func TestInlineParts(t *testing.T) {
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, ManifestFile), `name: bundle
+parts:
+  fonts:
+    packages: { aur: [ttf-udev-gothic] }
+    omarchy: { font: UDEV Gothic NF }
+  kitty:
+    files:
+      files/kitty/kitty.conf: ~/.config/kitty/kitty.conf
+  herdr:
+`)
+	writeFile(t, filepath.Join(repo, "herdr", ManifestFile), "herdr:\n  plugins:\n    - source: a/b\n")
+
+	rs, err := omakaseFromDir(filepath.Join(repo, ManifestFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs) != 3 {
+		t.Fatalf("got %d omakases: %+v", len(rs), rs)
+	}
+	base := filepath.Base(repo)
+	// inline parts keep the repository root as their directory, so files: paths
+	// are relative to it; a part with an empty value is still a directory part
+	for i, want := range []struct{ name, dir string }{
+		{base + "/fonts", repo},
+		{base + "/kitty", repo},
+		{base + "/herdr", filepath.Join(repo, "herdr")},
+	} {
+		if rs[i].Name != want.name || rs[i].Dir != want.dir {
+			t.Errorf("part %d: got name=%q dir=%q, want name=%q dir=%q", i, rs[i].Name, rs[i].Dir, want.name, want.dir)
+		}
+	}
+	if rs[0].Manifest.Omarchy.Font != "UDEV Gothic NF" || len(rs[1].Manifest.Files) != 1 || len(rs[2].Manifest.Herdr.Plugins) != 1 {
+		t.Errorf("sections not split per part: %+v", rs)
+	}
+	if rs[0].Root == nil || rs[2].Root != nil {
+		t.Errorf("Root set wrong: inline=%v dir=%v", rs[0].Root, rs[2].Root)
+	}
+
+	// one inline part on its own
+	src, err := parseSource(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src.Part = "kitty"
+	one, err := omakasesIn(src, repo, "")
+	if err != nil || len(one) != 1 || one[0].Part != "kitty" || len(one[0].Manifest.Files) != 1 {
+		t.Fatalf("single inline part: %v %+v", err, one)
+	}
+
+	// saving an inline part rewrites the whole root manifest, keeping its siblings
+	rs[0].Manifest.Packages.Aur = append(rs[0].Manifest.Packages.Aur, "ttf-hackgen")
+	if err := rs[0].Save(); err != nil {
+		t.Fatal(err)
+	}
+	back, err := LoadManifest(filepath.Join(repo, ManifestFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := back.Parts.Names; len(got) != 3 || got[0] != "fonts" || got[2] != "herdr" {
+		t.Fatalf("part order lost: %+v", got)
+	}
+	if len(back.Parts.Inline["fonts"].Packages.Aur) != 2 {
+		t.Errorf("export not folded back: %+v", back.Parts.Inline["fonts"].Packages)
+	}
+	if _, ok := back.Parts.Inline["herdr"]; ok {
+		t.Error("directory part should not gain an inline body")
+	}
+	if len(back.Parts.Inline["kitty"].Files) != 1 {
+		t.Error("sibling part lost on save")
+	}
+
+	// a part cannot declare parts of its own
+	writeFile(t, filepath.Join(repo, ManifestFile), "parts:\n  a:\n    parts: [b]\n")
+	if _, err := omakaseFromDir(filepath.Join(repo, ManifestFile)); err == nil {
+		t.Error("nested parts: want error")
+	}
+}

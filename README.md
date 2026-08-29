@@ -13,21 +13,34 @@ my-omakase/
 └── commands/          # Claude Code commands -> ~/.claude/commands/<name>.md
 ```
 
-Or split it into feature-sized **parts** that people can mix and match — one
-directory per part, each with its own `omasushi.yaml`, listed by a thin root manifest:
+Or split it into feature-sized **parts** that people can mix and match. The short
+way is to write them straight into the root `omasushi.yaml`, keeping one `files/`
+tree for the whole repository:
+
+```yaml
+name: my-omakase
+parts:
+  kitty:
+    files: { files/kitty/kitty.conf: ~/.config/kitty/kitty.conf }
+  herdr:
+    herdr: { plugins: [{ source: owner/repo }] }
+    files: { files/herdr/config.toml: ~/.config/herdr/config.toml }
+  claude:
+    claude: { skills: skills }
+```
+
+A part large enough to want its own directory can have one — give it a directory
+with an `omasushi.yaml` whose paths are relative to that directory, and leave its
+entry empty (or list the parts as `parts: [kitty, herdr, claude]`, which is all
+directory parts):
 
 ```
 my-omakase/
-├── omasushi.yaml      # name, description, parts: [kitty, herdr, claude]
-├── kitty/
-│   ├── omasushi.yaml  # files: { files/kitty.conf: ~/.config/kitty/kitty.conf }
-│   └── files/kitty.conf
-├── herdr/
-│   ├── omasushi.yaml
-│   └── files/config.toml
-└── claude/
-    ├── omasushi.yaml  # claude: { skills: skills }
-    └── skills/…
+├── omasushi.yaml      # parts: { kitty: {...}, nvim: }
+├── files/kitty/kitty.conf
+└── nvim/
+    ├── omasushi.yaml  # files: { files/init.lua: ~/.config/nvim/init.lua }
+    └── files/init.lua
 ```
 
 `omasushi use you/my-omakase` takes every part; `omasushi use you/my-omakase/herdr`
@@ -100,7 +113,7 @@ prints the URL; `--web URL` or `$OMASUSHI_WEB_URL` points at another instance
 | `claude.commands` (dir) | symlink each `*.md` to `~/.claude/commands/<name>.md` |
 | `files` `{omakase-path: ~/dest}` | symlink; an existing real file is moved to `.bak` |
 | `hosts.<hostname>` | overlay merged onto the base for that machine |
-| `parts` (root only) | sub-directories that are omakases of their own; `use owner/repo` takes them all |
+| `parts` (root only) | feature-sized pieces, written inline or as sub-directories with their own `omasushi.yaml`; `use owner/repo` takes them all, `use owner/repo/<part>` one. A manifest that declares parts is only their index — its own sections are not applied |
 
 See [`omakase-template/omasushi.yaml`](omakase-template/omasushi.yaml) for a commented example.
 

@@ -17,20 +17,90 @@ const ManifestFile = "omasushi.yaml"
 // Hosts holds per-host overlays that are merged onto the base when
 // resolved for a given hostname.
 //
-// A repository may instead be split into feature-sized parts (herdr/, kitty/,
-// claude/ …), each a directory with its own omasushi.yaml. The root manifest
-// then only lists them in Parts; `omasushi use owner/repo` takes all of them
-// and `omasushi use owner/repo/herdr` just one.
+// A repository may instead be split into feature-sized parts (herdr, kitty,
+// claude …) declared in Parts; `omasushi use owner/repo` takes all of them and
+// `omasushi use owner/repo/herdr` just one. A manifest that declares parts is
+// only their index: its own sections are not applied.
 type Manifest struct {
 	Name        string             `yaml:"name,omitempty"`
 	Description string             `yaml:"description,omitempty"`
-	Parts       []string           `yaml:"parts,omitempty"`
+	Parts       Parts              `yaml:"parts,omitempty"`
 	Packages    Packages           `yaml:"packages,omitempty"`
 	Omarchy     Omarchy            `yaml:"omarchy,omitempty"`
 	Herdr       Herdr              `yaml:"herdr,omitempty"`
 	Claude      Claude             `yaml:"claude,omitempty"`
 	Files       map[string]string  `yaml:"files,omitempty"`
 	Hosts       map[string]Overlay `yaml:"hosts,omitempty"`
+}
+
+// Parts is a root manifest's parts declaration. It accepts two spellings:
+//
+//	parts: [herdr, kitty]        # each part is a directory with its own omasushi.yaml,
+//	                             # and its paths are relative to that directory
+//
+//	parts:                       # each part is written out here, and its paths stay
+//	  herdr:                     # relative to the repository root, so one files/
+//	    herdr:                   # tree can serve every part
+//	      plugins: [{source: a/b}]
+//	  kitty:
+//	    files: {files/kitty/kitty.conf: ~/.config/kitty/kitty.conf}
+//
+// The two mix: in the map form a part with an empty value is a directory part.
+// Names is the declared order; Inline holds only the parts written out in place.
+// A part may carry anything a manifest can except nested parts.
+type Parts struct {
+	Names  []string
+	Inline map[string]*Manifest
+}
+
+func (p Parts) Len() int { return len(p.Names) }
+
+func (p *Parts) UnmarshalYAML(n *yaml.Node) error {
+	switch n.Kind {
+	case yaml.SequenceNode:
+		return n.Decode(&p.Names)
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			var name string
+			if err := n.Content[i].Decode(&name); err != nil {
+				return err
+			}
+			p.Names = append(p.Names, name)
+			if v := n.Content[i+1]; v.Tag != "!!null" {
+				var m Manifest
+				if err := v.Decode(&m); err != nil {
+					return err
+				}
+				if m.Parts.Len() > 0 {
+					return fmt.Errorf("line %d: part %q cannot declare parts of its own", v.Line, name)
+				}
+				if p.Inline == nil {
+					p.Inline = map[string]*Manifest{}
+				}
+				p.Inline[name] = &m
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("line %d: parts must be a list of directories or a map of parts", n.Line)
+}
+
+func (p Parts) MarshalYAML() (any, error) {
+	if len(p.Inline) == 0 {
+		return p.Names, nil
+	}
+	n := &yaml.Node{Kind: yaml.MappingNode}
+	for _, name := range p.Names {
+		val := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "~"}
+		if m, ok := p.Inline[name]; ok {
+			val = &yaml.Node{}
+			if err := val.Encode(m); err != nil {
+				return nil, err
+			}
+		}
+		n.Content = append(n.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name}, val)
+	}
+	return n, nil
 }
 
 // Overlay is a Manifest without metadata or Hosts; used as the value of

@@ -36,11 +36,18 @@ Omakases are cloned to `~/.local/share/omasushi/omakases/<repo>` (one checkout p
 shared by its parts); the list lives in `~/.config/omasushi/config.yaml` as `{name, source, part}`.
 With no omakase configured, `./omasushi.yaml` is used.
 
-**Parts**: a repository can be split into feature-sized directories (`herdr/`, `kitty/`, `claude/`…)
-that each carry their own `omasushi.yaml` with paths relative to that directory. The root
-`omasushi.yaml` then only has `name`, `description` and `parts: [herdr, kitty, claude]`.
-Users mix parts from different repositories; suggest this layout when someone wants to share
-one feature's config rather than a whole machine.
+**Parts**: a repository can be split into feature-sized pieces that users mix across
+repositories. Suggest this when someone wants to share one feature's config rather than a
+whole machine. Two spellings, mixable in one manifest:
+
+- **inline** (default; `parts:` as a map) — each part is written in the root `omasushi.yaml`
+  and its paths stay relative to the repository root, so one `files/` tree serves every part
+- **directory** (`parts:` as a list, or a map entry with an empty value) — the part is a
+  directory carrying its own `omasushi.yaml`, and its paths are relative to that directory
+
+A part takes anything a manifest can (including `hosts:`) except nested `parts:`. A manifest
+that declares parts is only their index: its own top-level sections are not applied.
+`omasushi export --to <repo>/<part>` folds the new entries back into that part.
 
 ## Typical workflows
 
@@ -83,7 +90,13 @@ hosts:
   <hostname>:                    # overlay merged onto the base (lists unioned, scalars win)
     packages: {...}
     files: {...}
-parts: [herdr, kitty]            # root of a split repo only: each is a directory with its own omasushi.yaml
+
+# root of a split repo only, instead of the sections above:
+parts:
+  kitty:                         # inline: paths relative to the repository root
+    files: { files/kitty/kitty.conf: ~/.config/kitty/kitty.conf }
+  nvim:                          # empty value: nvim/omasushi.yaml, paths relative to nvim/
+parts: [herdr, kitty]            # list form: every part is a directory
 ```
 
 Several omakases stack in `use` order; a later omakase wins for the same key/destination.
@@ -100,8 +113,8 @@ Several omakases stack in `use` order; a later omakase wins for the same key/des
 
 ## Source layout (github.com/polidog/omasushi)
 
-- `cmd/omasushi/manifest.go` — YAML types, `Resolve(host)`, `Overlay.merge`
-- `cmd/omasushi/omakase.go` — config, `use`/`remove`/`update`, source resolution (`parseSource`: owner/repo[/part]), parts expansion (`omakasesIn`)
+- `cmd/omasushi/manifest.go` — YAML types, `Parts` (list/map unmarshalling), `Resolve(host)`, `Overlay.merge`
+- `cmd/omasushi/omakase.go` — config, `use`/`remove`/`update`, source resolution (`parseSource`: owner/repo[/part]), parts expansion (`omakasesIn`, inline vs directory parts), `Omakase.Save`
 - `cmd/omasushi/probe.go` — read the real machine (`State`). Add a `probeXxx` here for a new target
 - `cmd/omasushi/plan.go` — diff → `Action{Kind, Desc, Run}`; `omakaseLinks` expands files/skills/commands
 - `cmd/omasushi/main.go` — CLI, `export`, `init`

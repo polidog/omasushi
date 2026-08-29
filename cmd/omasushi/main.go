@@ -162,7 +162,7 @@ func main() {
 			fmt.Println("nothing new")
 			return
 		}
-		die(target.Manifest.Save(target.ManifestPath()))
+		die(target.Save())
 		fmt.Printf("wrote %s\n", target.ManifestPath())
 		for _, a := range added {
 			fmt.Println("+", a)
