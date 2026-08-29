@@ -12,7 +12,8 @@ It is a thin wrapper: no reimplemented yay or git clone. **It never removes anyt
 ## Commands
 
 ```sh
-omasushi use owner/repo          # add an omakase (GitHub shorthand, URL, or local path)
+omasushi use owner/repo          # add an omakase (GitHub shorthand, URL, or local path); all parts of a split repo
+omasushi use owner/repo/herdr    # one part of a split repo (name shows as repo/herdr; remove it by that name)
 omasushi list                    # omakases in use
 omasushi update                  # git pull remote omakases
 omasushi remove <name>
@@ -31,8 +32,15 @@ omasushi -f path/omasushi.yaml plan   # single-manifest mode (developing an omak
 omasushi -H <hostname> plan            # resolve as another host
 ```
 
-Omakases are cloned to `~/.local/share/omasushi/omakases/<name>`; the list lives in
-`~/.config/omasushi/config.yaml`. With no omakase configured, `./omasushi.yaml` is used.
+Omakases are cloned to `~/.local/share/omasushi/omakases/<repo>` (one checkout per repository,
+shared by its parts); the list lives in `~/.config/omasushi/config.yaml` as `{name, source, part}`.
+With no omakase configured, `./omasushi.yaml` is used.
+
+**Parts**: a repository can be split into feature-sized directories (`herdr/`, `kitty/`, `claude/`…)
+that each carry their own `omasushi.yaml` with paths relative to that directory. The root
+`omasushi.yaml` then only has `name`, `description` and `parts: [herdr, kitty, claude]`.
+Users mix parts from different repositories; suggest this layout when someone wants to share
+one feature's config rather than a whole machine.
 
 ## Typical workflows
 
@@ -75,6 +83,7 @@ hosts:
   <hostname>:                    # overlay merged onto the base (lists unioned, scalars win)
     packages: {...}
     files: {...}
+parts: [herdr, kitty]            # root of a split repo only: each is a directory with its own omasushi.yaml
 ```
 
 Several omakases stack in `use` order; a later omakase wins for the same key/destination.
@@ -92,7 +101,7 @@ Several omakases stack in `use` order; a later omakase wins for the same key/des
 ## Source layout (github.com/polidog/omasushi)
 
 - `cmd/omasushi/manifest.go` — YAML types, `Resolve(host)`, `Overlay.merge`
-- `cmd/omasushi/omakase.go` — config, `use`/`remove`/`update`, source resolution
+- `cmd/omasushi/omakase.go` — config, `use`/`remove`/`update`, source resolution (`parseSource`: owner/repo[/part]), parts expansion (`omakasesIn`)
 - `cmd/omasushi/probe.go` — read the real machine (`State`). Add a `probeXxx` here for a new target
 - `cmd/omasushi/plan.go` — diff → `Action{Kind, Desc, Run}`; `omakaseLinks` expands files/skills/commands
 - `cmd/omasushi/main.go` — CLI, `export`, `init`

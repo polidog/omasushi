@@ -200,7 +200,8 @@ func publishTarget(cfg *Config, file, arg string) (repo, dir string, err error) 
 }
 
 // publishOmakase picks the repo URL for an omakase in use: its recorded
-// source for git ones, the checkout's origin for local ones.
+// source for git ones, the checkout's origin for local ones. Parts publish
+// their whole repository — the web lists the parts itself.
 func publishOmakase(r Omakase) (repo, dir string, err error) {
 	if !r.Local {
 		_, target, _, err := resolveSource(r.Source)
@@ -208,10 +209,10 @@ func publishOmakase(r Omakase) (repo, dir string, err error) {
 			return "", "", err
 		}
 		repo, err = canonicalRepoURL(target)
-		return repo, r.Dir, err
+		return repo, r.Repo, err
 	}
-	repo, err = originOf(r.Dir)
-	return repo, r.Dir, err
+	repo, err = originOf(r.Repo)
+	return repo, r.Repo, err
 }
 
 func originOf(dir string) (string, error) {

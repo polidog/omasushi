@@ -1,0 +1,8 @@
+# Omarchy bar widget: pending omakase actions in the bar, apply from there.
+name: omasushi/plugin
+description: omasushi bar widget for Omarchy.
+
+omarchy:
+  plugins:
+    - url: https://github.com/polidog/omasushi.git
+      enable: true

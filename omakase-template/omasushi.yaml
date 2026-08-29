@@ -6,6 +6,12 @@
 name: my-setup
 description: What this setup is about, in one line.
 
+# Prefer feature-sized pieces others can mix and match? Split the repository
+# into directories that each carry their own omasushi.yaml, and list them here
+# instead of the sections below — `omasushi use you/repo` takes all of them,
+# `omasushi use you/repo/kitty` just one.
+# parts: [kitty, herdr, claude]
+
 packages:
   pacman: []            # official repos — written by hand, e.g. [tmux, ripgrep]
   aur: []               # filled by `omasushi export` from pacman -Qqm
