@@ -24,7 +24,8 @@ omakases:
                               owner/repo/herdr just that one
   list                        show omakases in use
   update                      git pull every remote omakase
-  remove <name>               forget an omakase (deletes its managed checkout)
+  remove <name>               forget an omakase (unlinks its files, deletes
+                              its managed checkout)
   init [dir]                  scaffold a new omakase repository
   publish [<name>|<repo>|<path>]
                               put an omakase on omasushi-web (POSTs its repo
@@ -35,6 +36,8 @@ machine:
                               machine's setup, and how far apart they are
   plan [--json]               show what apply would do
   apply                       install missing packages/plugins, link files/skills
+  clean [<name>] [--dry-run]  undo apply's links: remove the symlinks and put
+                              the .bak originals back (packages stay installed)
   export [--to <omakase>] [--host <name>]
                               record this machine's installed packages/plugins
                               into an omakase (--host writes under hosts.<name>)
@@ -86,6 +89,14 @@ func main() {
 	case "remove":
 		if len(args) != 1 {
 			usage()
+		}
+		omakases, err := LoadOmakases(cfg)
+		die(err)
+		for _, r := range omakases {
+			if r.Name == args[0] {
+				_, err := Unlink([]Omakase{r}, *host, false)
+				die(err)
+			}
 		}
 		die(cfg.Remove(args[0]))
 		fmt.Println("removed", args[0])
@@ -147,6 +158,21 @@ func main() {
 		for _, a := range actions {
 			fmt.Printf("==> %s: %s\n", a.Kind, a.Desc)
 			die(a.Run())
+		}
+	case "clean":
+		fs := flag.NewFlagSet("clean", flag.ExitOnError)
+		dryRun := fs.Bool("dry-run", false, "only show what would be unlinked")
+		fs.Parse(args)
+		targets := omakases
+		if fs.NArg() > 0 {
+			t, err := pickOmakase(omakases, fs.Arg(0))
+			die(err)
+			targets = []Omakase{*t}
+		}
+		undone, err := Unlink(targets, *host, *dryRun)
+		die(err)
+		if len(undone) == 0 {
+			fmt.Println("nothing linked")
 		}
 	case "export":
 		fs := flag.NewFlagSet("export", flag.ExitOnError)

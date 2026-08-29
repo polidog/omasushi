@@ -9,7 +9,7 @@ import (
 )
 
 type Action struct {
-	Kind    string       `json:"kind"` // aur, pacman, font, default-*, omarchy-add, omarchy-enable, herdr-add, herdr-reload, file-link, skill-link, command-link
+	Kind    string       `json:"kind"` // aur, pacman, font, default-*, omarchy-add, omarchy-enable, herdr-add, herdr-reload, hypr-reload, file-link, skill-link, command-link
 	Desc    string       `json:"desc"`
 	Omakase string       `json:"omakase,omitempty"`
 	Run     func() error `json:"-"`
@@ -97,8 +97,9 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 		}})
 	}
 
-	herdrTouched := false
+	herdrTouched, hyprTouched := false, false
 	herdrDir := filepath.Join(expandHome("~"), ".config/herdr") + string(filepath.Separator)
+	hyprDir := filepath.Join(expandHome("~"), ".config/hypr") + string(filepath.Separator)
 	for _, l := range links {
 		l := l
 		if cur, err := os.Readlink(l.dst); err == nil && cur == l.src {
@@ -110,12 +111,26 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 		if strings.HasPrefix(l.dst, herdrDir) {
 			herdrTouched = true
 		}
+		if strings.HasPrefix(l.dst, hyprDir) {
+			hyprTouched = true
+		}
 	}
 	if herdrTouched {
 		// Best effort: the server may not be running on a fresh machine.
 		actions = append(actions, Action{Kind: "herdr-reload", Desc: "herdr server reload-config", Run: func() error {
 			if err := runVisible("herdr", "server", "reload-config"); err != nil {
 				fmt.Println("  (herdr not running; config is picked up on next start)")
+			}
+			return nil
+		}})
+	}
+	if hyprTouched {
+		// Linking a config Hyprland has already read changes nothing until it
+		// rereads it, so keybindings would look like they simply did not apply.
+		// Best effort: there is no compositor to talk to outside a session.
+		actions = append(actions, Action{Kind: "hypr-reload", Desc: "hyprctl reload", Run: func() error {
+			if err := runVisible("hyprctl", "reload"); err != nil {
+				fmt.Println("  (no Hyprland session; config is picked up on next start)")
 			}
 			return nil
 		}})
