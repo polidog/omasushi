@@ -61,7 +61,7 @@ Panel {
 
   Process {
     id: planProc
-    command: ["bash", "-c", Model.planScript]
+    command: ["bash", "-lc", Model.planScript]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {

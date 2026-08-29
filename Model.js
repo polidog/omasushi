@@ -1,15 +1,18 @@
 .pragma library
 
 // Runs `omasushi plan --json` with the PATH a login shell would have, so a
-// binary in ~/go/bin or ~/.local/bin is found even when the shell was
-// started before it was installed.
-var planScript = 'export PATH="$HOME/go/bin:$HOME/.local/bin:$PATH"; '
+// binary in ~/go/bin, ~/.local/bin or a mise-managed GOBIN is found even
+// when the shell was started before it was installed.
+var pathFix = 'export PATH="$HOME/go/bin:$HOME/.local/bin:$PATH"; '
+  + 'command -v omasushi >/dev/null 2>&1 || ! command -v mise >/dev/null 2>&1 || eval "$(mise env -s bash 2>/dev/null)"; '
+
+var planScript = pathFix
   + 'if ! command -v omasushi >/dev/null 2>&1; then echo \'{"missing":true}\'; exit 0; fi; '
   + 'omasushi plan --json 2>/dev/null || echo \'{"error":true}\''
 
 // Same PATH fix for the interactive commands run in a floating terminal.
 function terminalCommand(sub) {
-  return 'export PATH="$HOME/go/bin:$HOME/.local/bin:$PATH"; omasushi ' + sub
+  return pathFix + 'omasushi ' + sub
 }
 
 function parsePlan(text) {
