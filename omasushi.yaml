@@ -1,10 +1,12 @@
 # This repository is itself an omakase, split into feature-sized parts.
 #   omasushi use polidog/omasushi          # everything below
-#   omasushi use polidog/omasushi/herdr    # just the herdr keybindings
+#   omasushi use polidog/omasushi/claude   # just the Claude Code skill
+#
+# Only what belongs to the tool lives here. For a machine setup to copy, see
+# polidog/omakase - `omasushi use polidog/omakase/herdr` for the herdr config.
 name: omasushi
-description: The omasushi CLI's own skill, bar widget and herdr config.
+description: The omasushi CLI's own bar widget and Claude Code skill.
 
 parts:
   - plugin   # Omarchy bar widget
   - claude   # Claude Code skill for driving omasushi
-  - herdr    # tmux-style herdr keybindings + plugins

@@ -64,8 +64,8 @@ omarchy plugin add https://github.com/polidog/omasushi.git --enable
 ## Use someone's omakase
 
 ```sh
-omasushi use polidog/omasushi-omakase   # GitHub shorthand, full URL, or a local path
-omasushi use polidog/omasushi/herdr     # one part of a split repository
+omasushi use polidog/omakase            # GitHub shorthand, full URL, or a local path
+omasushi use polidog/omakase/herdr      # one part of a split repository
 omasushi plan                          # what would change
 omasushi apply                         # install missing packages/plugins, link files
 ```
@@ -142,10 +142,11 @@ omasushi -H <host> <cmd>             resolve hosts.<host> as if on that machine
 - Machine-specific bits (GPU drivers, monitor layouts) go under `hosts.<hostname>`.
 - `omarchy font set` / `theme set` rewrite terminal configs in place, turning a symlink
   back into a file. Copy the new file into the omakase and `apply` again.
-- This repo is itself a split omakase: `plugin/` (bar widget), `claude/` (a Claude Code
-  skill for driving omasushi, in [`claude/skills/omasushi`](claude/skills/omasushi)) and
-  `herdr/` (tmux-style keybindings). `omasushi use polidog/omasushi` installs all three,
-  `omasushi use polidog/omasushi/claude` just the skill.
+- This repo is itself a split omakase, of what belongs to the tool: `plugin/` (bar widget)
+  and `claude/` (a Claude Code skill for driving omasushi, in
+  [`claude/skills/omasushi`](claude/skills/omasushi)). `omasushi use polidog/omasushi`
+  installs both, `omasushi use polidog/omasushi/claude` just the skill. A machine setup to
+  copy from lives in [polidog/omakase](https://github.com/polidog/omakase).
 
 ## License
 
