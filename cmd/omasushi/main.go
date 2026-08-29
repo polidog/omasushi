@@ -41,10 +41,11 @@ machine:
   export [--to <omakase>] [--host <name>]
                               record this machine's installed packages/plugins
                               into an omakase (--host writes under hosts.<name>)
-  skill install|remove|list [--agent <name>]
+  skill install|update|remove|list [--agent <name>]
                               put the bundled omasushi skill into the default
                               agent's global skills (~/.claude/skills,
-                              ~/.codex/skills, ...) — no omakase needed
+                              ~/.codex/skills, ...) — no omakase needed;
+                              update rewrites it after a newer go install
   version
 
 -f path      use a single manifest instead of the configured omakases
@@ -130,6 +131,7 @@ func main() {
 		}
 	case "update":
 		die(Update(omakases))
+		die(updateInstalledSkills())
 	case "status":
 		fs := flag.NewFlagSet("status", flag.ExitOnError)
 		asJSON := fs.Bool("json", false, "machine readable output")

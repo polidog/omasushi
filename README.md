@@ -79,11 +79,12 @@ To teach your AI agent the omasushi CLI without adopting any omakase:
 ```sh
 omasushi skill install            # bundled skill -> the Omarchy default agent's global skills
 omasushi skill install --agent claude   # or pick one: claude|codex|gemini|copilot|opencode
-omasushi skill list | remove
+omasushi skill list | update | remove
 ```
 
 The skill is embedded in the binary and copied into `~/.claude/skills/omasushi`,
-`~/.codex/skills/omasushi`, … so `go install` is all you need.
+`~/.codex/skills/omasushi`, … so `go install` is all you need. After a newer
+`go install`, `omasushi skill update` (or plain `omasushi update`) rewrites it.
 
 ## Use someone's omakase
 
@@ -159,7 +160,7 @@ omasushi export [--to omakase] [--host name]
 omasushi init [dir]                  scaffold an omakase
 omasushi publish [name|repo|path] [--open|--browser|--dry-run] [--web URL]
                                      register an omakase on omasushi-web
-omasushi skill install|remove|list [--agent name]
+omasushi skill install|update|remove|list [--agent name]
                                      copy the bundled omasushi skill into an agent's
                                      global skills dir (no omakase needed)
 omasushi -f omasushi.yaml <cmd>      single-manifest mode, for working inside an omakase
