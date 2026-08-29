@@ -41,6 +41,10 @@ machine:
   export [--to <omakase>] [--host <name>]
                               record this machine's installed packages/plugins
                               into an omakase (--host writes under hosts.<name>)
+  skill install|remove|list [--agent <name>]
+                              put the bundled omasushi skill into the default
+                              agent's global skills (~/.claude/skills,
+                              ~/.codex/skills, ...) — no omakase needed
   version
 
 -f path      use a single manifest instead of the configured omakases
@@ -103,6 +107,9 @@ func main() {
 		return
 	case "publish":
 		die(publishCmd(cfg, *file, args))
+		return
+	case "skill":
+		die(skillCmd(args))
 		return
 	}
 
