@@ -21,7 +21,7 @@ omasushi remove <name>
 omasushi status [--json]         # overview: omakases (git branch/commit, modified/behind), machine setup, pending & unrecorded counts
 omasushi plan [--json]           # diff. `?` lines are installed-but-unrecorded extras
 omasushi apply                   # install what is missing, symlink files/skills/commands
-omasushi clean [name] [--dry-run] # undo the symlinks (restores .bak); packages stay
+omasushi clean [name] [--dry-run] # undo the symlinks (restores .bak, and names the ones with no .bak — those leave the file missing); packages stay
 omasushi export [--to <omakase>] [--host <name>]   # record this machine into an omakase (add-only)
 omasushi init [dir]              # scaffold a new omakase repo
 omasushi publish [name|owner/repo|url|path] [--open|--browser|--dry-run] [--web URL]
