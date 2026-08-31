@@ -180,7 +180,7 @@ var agentDirs = map[string]struct{ skills, commands string }{
 }
 
 // resolveAgent decides which agent the agent: section is for: the stacked
-// omakases' omarchy.defaults.agent (what apply will make the default), else
+// omakases' omarchy.defaults.agent (what sync will make the default), else
 // the machine's current default, else claude.
 func resolveAgent(omakases []Omakase, host string) string {
 	var want Overlay
@@ -201,7 +201,7 @@ func resolveAgent(omakases []Omakase, host string) string {
 // omakaseLinks expands files:, claude.{skills,commands} and
 // agent.{skills,commands} of one omakase into concrete symlinks. Later omakases
 // override earlier ones for the same destination (handled by order in Plan:
-// the last link wins on apply). agent is the resolved default agent, which
+// the last link wins on sync). agent is the resolved default agent, which
 // picks the destination of the agent: section.
 func omakaseLinks(r Omakase, o Overlay, agent string) []link {
 	var out []link

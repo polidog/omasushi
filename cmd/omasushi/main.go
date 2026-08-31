@@ -34,10 +34,11 @@ omakases:
 machine:
   status [--json]             where am I: omakases, their git state, this
                               machine's setup, and how far apart they are
-  plan [--json]               show what apply would do
-  apply                       install missing packages/plugins, link files/skills
-  clean [<name>] [--dry-run]  undo apply's links: remove the symlinks and put
+  diff [--json]               show what sync would do
+  sync                        install missing packages/plugins, link files/skills
+  unlink [<name>] [--dry-run] undo sync's links: remove the symlinks and put
                               the .bak originals back (packages stay installed)
+                              (plan/apply/clean still work as aliases)
   export [--to <omakase>] [--host <name>]
                               record this machine's installed packages/plugins
                               into an omakase (--host writes under hosts.<name>)
@@ -144,8 +145,8 @@ func main() {
 		} else {
 			printStatus(st)
 		}
-	case "plan":
-		fs := flag.NewFlagSet("plan", flag.ExitOnError)
+	case "diff", "plan": // plan is the pre-rename alias
+		fs := flag.NewFlagSet("diff", flag.ExitOnError)
 		asJSON := fs.Bool("json", false, "machine readable output")
 		fs.Parse(args)
 		have, err := Probe()
@@ -156,7 +157,7 @@ func main() {
 		} else {
 			printPlan(actions, extras)
 		}
-	case "apply":
+	case "sync", "apply": // apply is the pre-rename alias
 		have, err := Probe()
 		die(err)
 		actions, _ := Plan(omakases, *host, have)
@@ -167,8 +168,8 @@ func main() {
 		if failed := runActions(actions); failed > 0 {
 			os.Exit(1)
 		}
-	case "clean":
-		fs := flag.NewFlagSet("clean", flag.ExitOnError)
+	case "unlink", "clean": // clean is the pre-rename alias
+		fs := flag.NewFlagSet("unlink", flag.ExitOnError)
 		dryRun := fs.Bool("dry-run", false, "only show what would be unlinked")
 		fs.Parse(args)
 		targets := omakases
@@ -457,7 +458,7 @@ func runActions(actions []Action) int {
 	for _, f := range failed {
 		fmt.Fprintf(os.Stderr, "  %-15s %s: %v\n", f.action.Kind, f.action.Desc, f.err)
 	}
-	fmt.Fprintln(os.Stderr, "run `omasushi apply` again once they are sorted out.")
+	fmt.Fprintln(os.Stderr, "run `omasushi sync` again once they are sorted out.")
 	return len(failed)
 }
 

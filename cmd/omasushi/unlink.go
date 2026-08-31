@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// Unlink is the reverse of the link half of apply: every symlink an omakase
-// put in place is removed, and a file that apply moved aside as .bak is put
+// Unlink is the reverse of the link half of sync: every symlink an omakase
+// put in place is removed, and a file that sync moved aside as .bak is put
 // back. Only links that point at the omakase are touched, so something the
 // user re-pointed by hand is left alone. Packages, plugins, font and defaults
 // are never undone (the tool never uninstalls, and the previous font/defaults

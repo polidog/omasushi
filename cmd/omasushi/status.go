@@ -13,7 +13,7 @@ import (
 
 // Status is a snapshot of "where am I": the omakases in use and their git
 // state, what this machine currently has, and how far it is from the
-// omakases. plan answers "what would apply do"; status answers "how am I
+// omakases. diff answers "what would sync do"; status answers "how am I
 // doing overall".
 type Status struct {
 	Host     string          `json:"host"`
@@ -45,7 +45,7 @@ type MachineStatus struct {
 }
 
 type SyncStatus struct {
-	Pending     int            `json:"pending"`     // actions apply would run
+	Pending     int            `json:"pending"`     // actions sync would run
 	PendingKind map[string]int `json:"pendingKind"` // by Action.Kind
 	Extras      int            `json:"extras"`      // installed but unrecorded
 	Links       int            `json:"links"`       // files/skills/commands managed
@@ -164,7 +164,7 @@ func printStatus(st Status) {
 		for _, k := range kinds {
 			parts = append(parts, fmt.Sprintf("%s %d", k, s.PendingKind[k]))
 		}
-		fmt.Printf("  pending    %d actions (%s)   -> omasushi apply\n", s.Pending, strings.Join(parts, ", "))
+		fmt.Printf("  pending    %d actions (%s)   -> omasushi sync\n", s.Pending, strings.Join(parts, ", "))
 	}
 	fmt.Printf("  links      %d/%d in place\n", s.Linked, s.Links)
 	if s.Extras == 0 {

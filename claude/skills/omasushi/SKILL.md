@@ -19,9 +19,10 @@ omasushi update                  # git pull remote omakases
 omasushi remove <name>
 
 omasushi status [--json]         # overview: omakases (git branch/commit, modified/behind), machine setup, pending & unrecorded counts
-omasushi plan [--json]           # diff. `?` lines are installed-but-unrecorded extras
-omasushi apply                   # install what is missing, symlink files/skills/commands. A failing action does not stop the others; they are listed again at the end and the exit code is 1
-omasushi clean [name] [--dry-run] # undo the symlinks (restores .bak, and names the ones with no .bak — those leave the file missing); packages stay
+omasushi diff [--json]           # what sync would do. `?` lines are installed-but-unrecorded extras
+omasushi sync                    # install what is missing, symlink files/skills/commands. A failing action does not stop the others; they are listed again at the end and the exit code is 1
+omasushi unlink [name] [--dry-run] # undo the symlinks (restores .bak, and names the ones with no .bak — those leave the file missing); packages stay
+                                 # (plan/apply/clean are accepted as aliases of diff/sync/unlink)
 omasushi export [--to <omakase>] [--host <name>]   # record this machine into an omakase (add-only)
 omasushi init [dir]              # scaffold a new omakase repo
 omasushi publish [name|owner/repo|url|path] [--open|--browser|--dry-run] [--web URL]
@@ -29,8 +30,8 @@ omasushi publish [name|owner/repo|url|path] [--open|--browser|--dry-run] [--web 
                                  # checkout, or the omakase in use), warns if unpushed, POSTs it to <web>/api/omakase
                                  # (no login; the site reads omasushi.yaml from the public repo). Prints the plate URL
 
-omasushi -f path/omasushi.yaml plan   # single-manifest mode (developing an omakase)
-omasushi -H <hostname> plan            # resolve as another host
+omasushi -f path/omasushi.yaml diff   # single-manifest mode (developing an omakase)
+omasushi -H <hostname> diff            # resolve as another host
 ```
 
 Omakases are cloned to `~/.local/share/omasushi/omakases/<owner>/<repo>` (one checkout per repository,
@@ -52,13 +53,13 @@ that declares parts is only their index: its own top-level sections are not appl
 
 ## Typical workflows
 
-1. **Installed something on machine A** → `omasushi plan` shows `?` → `omasushi export` → commit & push the omakase
-2. **Bring machine B up** → `omasushi update` → `omasushi plan` → `omasushi apply`
-3. **Fresh machine** → `go install github.com/polidog/omasushi/cmd/omasushi@latest` → `omasushi use owner/repo` → `omasushi apply`
+1. **Installed something on machine A** → `omasushi diff` shows `?` → `omasushi export` → commit & push the omakase
+2. **Bring machine B up** → `omasushi update` → `omasushi diff` → `omasushi sync`
+3. **Fresh machine** → `go install github.com/polidog/omasushi/cmd/omasushi@latest` → `omasushi use owner/repo` → `omasushi sync`
 4. **Publish your setup** → `omasushi init my-omakase` → copy dotfiles under `files/`, skills under `skills/` → `omasushi -f my-omakase/omasushi.yaml export` → push → `omasushi publish` (registers on omasushi-web through its API; rate-limited to 10/hour per IP, and it fails with "not found" until `omasushi.yaml` is on the public repo's main/master)
 
-When the user says "sync", **show `plan` first, then run `apply`** — apply runs yay and
-git clone, so do not run it without the user seeing the plan.
+When the user says "sync", **show `diff` first, then run `sync`** — sync runs yay and
+git clone, so do not run it without the user seeing the diff.
 
 ## omasushi.yaml
 
@@ -111,9 +112,9 @@ Several omakases stack in `use` order; a later omakase wins for the same key/des
 ## Editing rules
 
 - Never put secrets (tokens, `calendar-sync.json`, …) under `files:` — omakases are meant to be public
-- To share a file: copy it into the omakase's `files/`, then add the mapping; `apply` swaps the original for a symlink
+- To share a file: copy it into the omakase's `files/`, then add the mapping; `sync` swaps the original for a symlink
 - Skills/commands are linked **per entry**, so the machine's own `~/.claude/skills` / `~/.codex/skills` stay untouched
-- `omarchy font set` / `omarchy theme set` rewrite terminal configs with `sed -i`, which turns the symlink back into a real file. Copy the new file into the omakase and `apply` again (plan shows the `file-link` again)
+- `omarchy font set` / `omarchy theme set` rewrite terminal configs with `sed -i`, which turns the symlink back into a real file. Copy the new file into the omakase and `sync` again (diff shows the `file-link` again)
 - `font` / `defaults` empty means "don't care". `export` only fills them when the base is empty
 - Machine-specific things (GPU drivers, monitor layouts) belong under `hosts.<hostname>`
 - First-party `omarchy.*` plugins are ignored by probe/export
@@ -126,4 +127,4 @@ Several omakases stack in `use` order; a later omakase wins for the same key/des
 - `cmd/omasushi/plan.go` — diff → `Action{Kind, Desc, Run}`; `omakaseLinks` expands files/skills/commands
 - `cmd/omasushi/main.go` — CLI, `export`, `init`
 - `cmd/omasushi/publish.go` — `publish`: repo URL resolution/canonicalisation and the `POST /api/omakase` call to omasushi-web (`webURL` default, `$OMASUSHI_WEB_URL`, `--web`)
-- the Omarchy bar widget lives in its own repository, [polidog/omarchy-omasushi](https://github.com/polidog/omarchy-omasushi) (`omarchy plugin add https://github.com/polidog/omarchy-omasushi.git`): shows pending actions and runs apply in a floating terminal. `plugin/omasushi.yaml` here is the part that installs it
+- the Omarchy bar widget lives in its own repository, [polidog/omarchy-omasushi](https://github.com/polidog/omarchy-omasushi) (`omarchy plugin add https://github.com/polidog/omarchy-omasushi.git`): shows pending actions and runs sync in a floating terminal. `plugin/omasushi.yaml` here is the part that installs it
