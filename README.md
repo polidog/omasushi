@@ -140,15 +140,15 @@ Anyone can now `omasushi use you/my-omakase`.
 To put it on the [omasushi.dev](https://omasushi.dev) conveyor belt where others can find it:
 
 ```sh
-omasushi publish            # registers this repo on omasushi.dev, prints the plate's URL
+omasushi publish            # opens the prefilled submission issue in your browser
 ```
 
 `publish` reads the repo URL from `origin`, checks that `omasushi.yaml` is committed
-and pushed, and POSTs it to the site's `/api/omakase` — no account needed; the site
-fetches `omasushi.yaml` from the public repo itself. `--open` opens the new plate in
-your browser, `--browser` uses the web form instead of the API, `--dry-run` only
-prints the URL; `--web URL` or `$OMASUSHI_WEB_URL` points at another instance
-(e.g. `http://localhost:3000` when hacking on omasushi-web).
+and pushed, and opens a prefilled "Submit an omakase" issue on this repository —
+Omarchy-plugin style. Press Submit there; a workflow validates the repo (the site
+fetches `omasushi.yaml` from the public repo itself), puts it on the belt and
+comments the plate's URL on the issue. `--dry-run` only prints the issue URL;
+`--submit-repo` or `$OMASUSHI_SUBMIT_REPO` points at another submission repo.
 
 ## What an omakase can declare
 
@@ -190,7 +190,7 @@ omasushi export [--to omakase] [--host name]
                                      record installed things into an omakase (add-only);
                                      defaults to your own (mine) when marked
 omasushi init [dir]                  scaffold an omakase
-omasushi publish [name|repo|path] [--open|--browser|--dry-run] [--web URL]
+omasushi publish [name|repo|path] [--dry-run]
                                      register an omakase on omasushi-web
 omasushi skill install|update|remove|list [--agent name]
                                      copy the bundled omasushi skill into an agent's

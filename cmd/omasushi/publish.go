@@ -1,44 +1,42 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 )
 
-// webURL is where omasushi-web lives. Overridable at build time
-// (-ldflags "-X main.webURL=https://…"), by $OMASUSHI_WEB_URL, or --web
-// (http://localhost:3000 for a local omasushi-web).
-var webURL = "https://omasushi.dev"
+// submitRepo is the GitHub repository whose issue form takes omakase
+// submissions (Omarchy-plugin style). Overridable at build time
+// (-ldflags "-X main.submitRepo=…") or by $OMASUSHI_SUBMIT_REPO.
+var submitRepo = "polidog/omasushi"
 
 // publishCmd puts an omakase on the omasushi-web conveyor belt.
 //
-// The CLI does the local half — find the repository URL, make sure
-// omasushi.yaml is there and pushed — then POSTs it to the web's JSON API
-// (no account needed; the web fetches omasushi.yaml from the public repo).
-// --browser opens the prefilled /new form instead of calling the API.
+// There is no direct registration API any more: submissions go through a
+// GitHub issue on the omasushi repository, where a workflow validates
+// omasushi.yaml and puts the plate on the belt. The CLI does the local
+// half — find the repository URL, make sure omasushi.yaml is there and
+// pushed — then opens the submit issue form prefilled.
 func publishCmd(cfg *Config, file string, args []string) error {
 	fs := flag.NewFlagSet("publish", flag.ExitOnError)
-	web := fs.String("web", envOr("OMASUSHI_WEB_URL", webURL), "omasushi-web base URL")
-	open := fs.Bool("open", false, "open the plate's page in a browser once registered")
-	browser := fs.Bool("browser", false, "don't call the API; open the registration form prefilled instead")
-	dry := fs.Bool("dry-run", false, "resolve and print the repository URL, register nothing")
+	submit := fs.String("submit-repo", envOr("OMASUSHI_SUBMIT_REPO", submitRepo), "GitHub owner/repo whose issue form takes submissions")
+	dry := fs.Bool("dry-run", false, "resolve and print the submission URL, open nothing")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, `usage: omasushi publish [--web URL] [--open|--browser|--dry-run] [<name>|<owner/repo>|<url>|<path>]
+		fmt.Fprintln(os.Stderr, `usage: omasushi publish [--dry-run] [<name>|<owner/repo>|<url>|<path>]
 
 With no argument, publishes the omakase in the working directory (./omasushi.yaml),
 else the single omakase in use. A configured omakase's name, a GitHub owner/repo,
-a github.com / gitlab.com URL, or a local checkout also work.`)
+a github.com / gitlab.com URL, or a local checkout also work.
+
+Publishing opens a prefilled submission issue on github.com/`+*submit+` in your
+browser. A workflow there validates omasushi.yaml and comments the plate's URL
+on the issue once it is on the belt.`)
 		fs.PrintDefaults()
 	}
 	fs.Parse(args)
@@ -58,91 +56,34 @@ a github.com / gitlab.com URL, or a local checkout also work.`)
 	}
 	fmt.Printf("omakase: %s\n", repo)
 
-	if *browser || *dry {
-		form, err := webPath(*web, "/new", url.Values{"url": {repo}})
-		if err != nil {
-			return err
-		}
-		fmt.Printf("form:    %s\n", form)
-		if *dry {
-			return nil
-		}
-		if err := openBrowser(form); err != nil {
-			return fmt.Errorf("could not open a browser (%v); open the URL above yourself", err)
-		}
-		return nil
-	}
-
-	res, err := registerOnWeb(*web, repo)
+	issue, err := submitIssueURL(*submit, repo)
 	if err != nil {
 		return err
 	}
-	if res.Created {
-		fmt.Printf("on the belt: %s\n", res.URL)
-	} else {
-		fmt.Printf("already on the belt: %s\n", res.URL)
+	fmt.Printf("submit:  %s\n", issue)
+	if *dry {
+		return nil
 	}
-	if *open {
-		if err := openBrowser(res.URL); err != nil {
-			fmt.Fprintln(os.Stderr, "warning: could not open a browser:", err)
-		}
+	if err := openBrowser(issue); err != nil {
+		return fmt.Errorf("could not open a browser (%v); open the URL above yourself", err)
 	}
+	fmt.Println("press Submit there; the workflow comments the plate's URL on the issue")
 	return nil
 }
 
-// registerResult is the JSON omasushi-web's POST /api/omakase returns.
-type registerResult struct {
-	OK      bool   `json:"ok"`
-	ID      string `json:"id"`
-	URL     string `json:"url"`
-	Created bool   `json:"created"`
-	Error   string `json:"error"`   // badInput|notFound|http|parse|empty|rateLimit
-	Message string `json:"message"` // human readable, English
-}
-
-// registerOnWeb POSTs the repo to omasushi-web. The web fetches
-// omasushi.yaml from the public repository itself, so nothing local is sent.
-func registerOnWeb(base, repo string) (*registerResult, error) {
-	endpoint, err := webPath(base, "/api/omakase", nil)
-	if err != nil {
-		return nil, err
+// submitIssueURL builds the prefilled "Submit an omakase" issue form URL.
+// Query keys matching the form's field ids (repo) prefill them.
+func submitIssueURL(submitRepo, repo string) (string, error) {
+	parts := strings.Split(submitRepo, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", fmt.Errorf("bad submit repo %q (want owner/repo; set --submit-repo or $OMASUSHI_SUBMIT_REPO)", submitRepo)
 	}
-	body, _ := json.Marshal(map[string]string{"repo": repo})
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
+	q := url.Values{
+		"template": {"submit-omakase.yml"},
+		"title":    {"Submit: " + strings.TrimPrefix(strings.TrimPrefix(repo, "https://"), "www.")},
+		"repo":     {repo},
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "omasushi/"+version)
-	client := &http.Client{Timeout: 60 * time.Second} // the web fetches the yaml + stars in-request
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("omasushi-web at %s: %w", base, err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	var res registerResult
-	if err := json.Unmarshal(raw, &res); err != nil || (!res.OK && res.Error == "") {
-		return nil, fmt.Errorf("omasushi-web at %s answered HTTP %d without a JSON result (is that the right --web URL?)", base, resp.StatusCode)
-	}
-	if !res.OK {
-		msg := res.Message
-		if msg == "" {
-			msg = res.Error
-		}
-		switch res.Error {
-		case "rateLimit":
-			msg += " (try again later)"
-		case "notFound":
-			msg += " — is the repo public, and is omasushi.yaml committed and pushed to main/master?"
-		}
-		return nil, fmt.Errorf("omasushi-web: %s", msg)
-	}
-	if res.URL == "" {
-		res.URL = strings.TrimRight(base, "/") + "/omakase/" + res.ID
-	}
-	return &res, nil
+	return "https://github.com/" + submitRepo + "/issues/new?" + q.Encode(), nil
 }
 
 // publishTarget resolves what to publish into a canonical repository URL and,
@@ -267,19 +208,6 @@ func publishWarnings(dir string) (out []string) {
 		out = append(out, fmt.Sprintf("on branch %q; the web reads HEAD, main or master", branch))
 	}
 	return out
-}
-
-// webPath joins a page or API path onto the omasushi-web base URL.
-func webPath(base, path string, q url.Values) (string, error) {
-	u, err := url.Parse(strings.TrimRight(base, "/"))
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return "", fmt.Errorf("bad omasushi-web URL %q (set --web or $OMASUSHI_WEB_URL)", base)
-	}
-	u.Path = strings.TrimSuffix(u.Path, "/") + path
-	if q != nil {
-		u.RawQuery = q.Encode()
-	}
-	return u.String(), nil
 }
 
 // openBrowser prefers Omarchy's launcher, then xdg-open, then $BROWSER.

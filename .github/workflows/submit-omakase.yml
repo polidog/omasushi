@@ -1,0 +1,92 @@
+# The belt's front door: turns a "Submit an omakase" issue into a plate on
+# omasushi-web. The web's POST /api/omakase does the actual validation (it
+# fetches omasushi.yaml from the public repo); this workflow just relays the
+# repo and the verdict. Approval is automatic — passing validation is the
+# review. Runs again whenever the issue is edited, so a failed submission is
+# retried by fixing the repo and editing the issue.
+#
+# Needs the OMASUSHI_SUBMIT_TOKEN secret (same value as the web's
+# $SUBMIT_TOKEN); the OMASUSHI_WEB_URL repo variable can point elsewhere.
+name: submit-omakase
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: submit-omakase-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  register:
+    if: contains(github.event.issue.labels.*.name, 'omakase-submission') && github.event.issue.state == 'open'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          WEB_URL: ${{ vars.OMASUSHI_WEB_URL || 'https://omasushi.dev' }}
+          SUBMIT_TOKEN: ${{ secrets.OMASUSHI_SUBMIT_TOKEN }}
+        with:
+          script: |
+            const issue_number = context.issue.number;
+            const comment = (body) =>
+              github.rest.issues.createComment({ ...context.repo, issue_number, body });
+
+            // The issue form renders its field as "### Repository" + a line.
+            const body = context.payload.issue.body ?? "";
+            const m = body.match(/###\s*Repository\s*\r?\n+(.+)/);
+            const repo = (m?.[1] ?? "").trim();
+            if (!repo || repo === "_No response_") {
+              await comment(
+                "⚠️ No repository found in the issue. Edit the issue and fill in the " +
+                "**Repository** field — validation reruns on every edit.",
+              );
+              return;
+            }
+
+            const base = process.env.WEB_URL.replace(/\/+$/, "");
+            let res;
+            try {
+              res = await fetch(`${base}/api/omakase`, {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                  authorization: `Bearer ${process.env.SUBMIT_TOKEN}`,
+                  "user-agent": "omasushi-submit-workflow",
+                },
+                body: JSON.stringify({ repo }),
+              });
+            } catch (e) {
+              await comment(`🚧 Could not reach ${base} (${e}). Edit the issue to retry.`);
+              return;
+            }
+
+            let json = null;
+            try { json = await res.json(); } catch {}
+            if (!json || (json.ok !== true && !json.error)) {
+              await comment(
+                `🚧 ${base} answered HTTP ${res.status} without a JSON result. Edit the issue to retry.`,
+              );
+              return;
+            }
+            if (!json.ok) {
+              await comment(
+                `❌ ${json.message ?? json.error}\n\n` +
+                "Make sure the repository is public with `omasushi.yaml` committed at its " +
+                "root and pushed to `main` / `master`, then **edit this issue** to run " +
+                "validation again.",
+              );
+              return;
+            }
+
+            await comment(`🍣 On the belt${json.created ? "" : " (it was already there)"}: ${json.url}`);
+            await github.rest.issues.update({
+              ...context.repo,
+              issue_number,
+              title: `Submit: ${repo}`,
+              state: "closed",
+              state_reason: "completed",
+            });
