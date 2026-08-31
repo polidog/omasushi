@@ -17,6 +17,10 @@ const ManifestFile = "omasushi.yaml"
 // Hosts holds per-host overlays that are merged onto the base when
 // resolved for a given hostname.
 //
+// Use names other omakases this one builds on (owner/repo[/part], URL, or a
+// path — relative ones resolve against this repository). They are layered
+// underneath the declaring omakase, so it wins on conflicts; see resolveUses.
+//
 // A repository may instead be split into feature-sized parts (herdr, kitty,
 // claude …) declared in Parts; `omasushi use owner/repo` takes all of them and
 // `omasushi use owner/repo/herdr` just one. A manifest that declares parts is
@@ -24,6 +28,7 @@ const ManifestFile = "omasushi.yaml"
 type Manifest struct {
 	Name        string             `yaml:"name,omitempty"`
 	Description string             `yaml:"description,omitempty"`
+	Use         []string           `yaml:"use,omitempty"`
 	Parts       Parts              `yaml:"parts,omitempty"`
 	Packages    Packages           `yaml:"packages,omitempty"`
 	Omarchy     Omarchy            `yaml:"omarchy,omitempty"`

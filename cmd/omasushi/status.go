@@ -28,6 +28,8 @@ type OmakaseStatus struct {
 	Source   string `json:"source"`
 	Dir      string `json:"dir"`
 	Local    bool   `json:"local"`
+	Mine     bool   `json:"mine,omitempty"` // the user's own omakase (export's default target)
+	Via      string `json:"via,omitempty"`  // pulled in by this omakase's use: declaration
 	HasHost  bool   `json:"hasHostOverlay"` // declares hosts.<host>
 	Branch   string `json:"branch,omitempty"`
 	Commit   string `json:"commit,omitempty"`
@@ -52,10 +54,10 @@ type SyncStatus struct {
 	Linked      int            `json:"linked"`      // ...of which are already in place
 }
 
-func gatherStatus(omakases []Omakase, host string, have *State) Status {
+func gatherStatus(omakases []Omakase, host string, have *State, mine string) Status {
 	st := Status{Host: host, Config: configPath(), Omakases: []OmakaseStatus{}}
 	for _, r := range omakases {
-		o := OmakaseStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local}
+		o := OmakaseStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local, Mine: mine != "" && r.Name == mine, Via: r.Via}
 		if r.Manifest != nil {
 			_, o.HasHost = r.Manifest.Hosts[host]
 		}
@@ -121,6 +123,12 @@ func printStatus(st Status) {
 			rev = o.Branch + "@" + o.Commit
 		}
 		var notes []string
+		if o.Mine {
+			notes = append(notes, "mine")
+		}
+		if o.Via != "" {
+			notes = append(notes, "via "+o.Via)
+		}
 		if o.Modified > 0 {
 			notes = append(notes, fmt.Sprintf("%d modified", o.Modified))
 		}

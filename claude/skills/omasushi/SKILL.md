@@ -14,16 +14,21 @@ It is a thin wrapper: no reimplemented yay or git clone. **It never removes anyt
 ```sh
 omasushi use owner/repo          # add an omakase (GitHub shorthand, URL, or local path); all parts of a split repo
 omasushi use owner/repo/herdr    # one part of a split repo (name shows as repo/herdr; remove it by that name)
-omasushi list                    # omakases in use
+omasushi use --mine owner/repo   # ...and mark it as the user's own: export writes there by default
+omasushi mine [name|none]        # show or set the user's own omakase
+omasushi list                    # omakases in use ("via X" = pulled in by X's use: declaration)
 omasushi update                  # git pull remote omakases
 omasushi remove <name>
 
 omasushi status [--json]         # overview: omakases (git branch/commit, modified/behind), machine setup, pending & unrecorded counts
-omasushi diff [--json]           # what sync would do. `?` lines are installed-but-unrecorded extras
+omasushi diff [--json]           # what sync would do; each action names the omakase behind it (`<- owner/repo`).
+                                 # `?` lines are installed-but-unrecorded extras
 omasushi sync                    # install what is missing, symlink files/skills/commands. A failing action does not stop the others; they are listed again at the end and the exit code is 1
 omasushi unlink [name] [--dry-run] # undo the symlinks (restores .bak, and names the ones with no .bak — those leave the file missing); packages stay
                                  # (plan/apply/clean are accepted as aliases of diff/sync/unlink)
-omasushi export [--to <omakase>] [--host <name>]   # record this machine into an omakase (add-only)
+omasushi export [--to <omakase>] [--host <name>]   # record this machine into an omakase (add-only);
+                                 # writes to the user's own (mine) when marked, never records what
+                                 # any stacked omakase already declares
 omasushi init [dir]              # scaffold a new omakase repo
 omasushi publish [name|owner/repo|url|path] [--open|--browser|--dry-run] [--web URL]
                                  # register on omasushi-web: resolves the repo URL (origin of ./omasushi.yaml's
@@ -57,6 +62,7 @@ that declares parts is only their index: its own top-level sections are not appl
 2. **Bring machine B up** → `omasushi update` → `omasushi diff` → `omasushi sync`
 3. **Fresh machine** → `go install github.com/polidog/omasushi/cmd/omasushi@latest` → `omasushi use owner/repo` → `omasushi sync`
 4. **Publish your setup** → `omasushi init my-omakase` → copy dotfiles under `files/`, skills under `skills/` → `omasushi -f my-omakase/omasushi.yaml export` → push → `omasushi publish` (registers on omasushi-web through its API; rate-limited to 10/hour per IP, and it fails with "not found" until `omasushi.yaml` is on the public repo's main/master)
+5. **Build on other people's omakases** → put them under `use:` in your own `omasushi.yaml` (your entries win on conflicts) → `omasushi use --mine you/my-setup` → `export` now writes to yours by default and never records what a `use:`d omakase already declares. One repo carries the whole combination for the next machine
 
 When the user says "sync", **show `diff` first, then run `sync`** — sync runs yay and
 git clone, so do not run it without the user seeing the diff.
@@ -66,6 +72,9 @@ git clone, so do not run it without the user seeing the diff.
 ```yaml
 name: my-setup
 description: short blurb shown by tools
+use:                             # other omakases this one builds on: loaded underneath it,
+  - polidog/omakase/kitty        # so this file wins on conflicts. owner/repo[/part], URL,
+  - someone/nvim-setup           # or path (relative = sibling of this repo). Not in config.yaml
 packages:
   pacman: [pkg]                  # official repos; written by hand
   aur: [pkg]                     # filled by export (pacman -Qqm)

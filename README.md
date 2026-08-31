@@ -97,7 +97,31 @@ omasushi sync                          # install missing packages/plugins, link 
 ```
 
 Several omakases can be stacked (`omasushi use` again); later ones win on conflicts.
-`omasushi update` pulls them all.
+`omasushi update` pulls them all. `omasushi diff` names the omakase behind each
+pending action (`install foo  <- polidog/omakase`), so it stays clear who put
+what on your plate.
+
+## Build your own on top of others'
+
+Your omakase can declare the omakases it builds on with `use:`, so the whole
+combination — other people's parts plus your own layer — lives in one repo:
+
+```yaml
+name: my-setup
+use:                        # loaded underneath this file; your entries win on conflicts
+  - polidog/omakase/kitty
+  - someone/nvim-setup
+packages:
+  aur: [my-extra-tool]      # your own picks on top
+```
+
+`omasushi use you/my-setup` pulls the whole stack in (dependencies show as
+`via my-setup` in `list`/`status`), and a new machine needs just that one line.
+
+Mark it as yours with `omasushi use --mine you/my-setup` (or `omasushi mine <name>`
+later): `export` then records this machine's unlisted installs there without
+`--to`, and never mixes in anything a `use:`d omakase already declares — the
+boundary between your picks and theirs stays sharp.
 
 ## Publish your own
 
@@ -130,6 +154,7 @@ prints the URL; `--web URL` or `$OMASUSHI_WEB_URL` points at another instance
 
 | key | what sync does |
 |---|---|
+| `use` | load these omakases (owner/repo[/part], URL, or path) underneath this one — it wins on conflicts; see "Build your own on top of others'" |
 | `packages.pacman` / `packages.aur` | `omarchy-pkg-add` / `omarchy-pkg-aur-add` for missing ones |
 | `omarchy.font` | `omarchy-font-set` |
 | `omarchy.defaults.{agent,browser,editor,terminal}` | `omarchy-default-*` |
@@ -147,8 +172,10 @@ See [`omakase-template/omasushi.yaml`](omakase-template/omasushi.yaml) for a com
 ## Commands
 
 ```
-omasushi use <owner/repo[/part]|url|path>
-                                     add an omakase (or one part of a split repo)
+omasushi use [--mine] <owner/repo[/part]|url|path>
+                                     add an omakase (or one part of a split repo);
+                                     --mine marks it as your own, export's default target
+omasushi mine [name|none]            show or set your own omakase
 omasushi list | update | remove <name>
 omasushi status [--json]             where am I: omakases + their git state, this
                                      machine's setup, pending/unrecorded counts
@@ -160,7 +187,8 @@ omasushi unlink [name] [--dry-run]   undo sync's links: remove the symlinks, put
                                      with no .bak are listed, since they leave a hole
                                      (plan/apply/clean still work as aliases)
 omasushi export [--to omakase] [--host name]
-                                     record installed things into an omakase (add-only)
+                                     record installed things into an omakase (add-only);
+                                     defaults to your own (mine) when marked
 omasushi init [dir]                  scaffold an omakase
 omasushi publish [name|repo|path] [--open|--browser|--dry-run] [--web URL]
                                      register an omakase on omasushi-web
