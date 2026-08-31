@@ -21,7 +21,7 @@ omasushi remove <name>
 omasushi status [--json]         # overview: omakases (git branch/commit, modified/behind), machine setup, pending & unrecorded counts
 omasushi diff [--json]           # what sync would do. `?` lines are installed-but-unrecorded extras
 omasushi sync                    # install what is missing, symlink files/skills/commands. A failing action does not stop the others; they are listed again at the end and the exit code is 1
-omasushi unlink [name] [--dry-run] # undo the symlinks (restores .bak); packages stay
+omasushi unlink [name] [--dry-run] # undo the symlinks (restores .bak, and names the ones with no .bak — those leave the file missing); packages stay
                                  # (plan/apply/clean are accepted as aliases of diff/sync/unlink)
 omasushi export [--to <omakase>] [--host <name>]   # record this machine into an omakase (add-only)
 omasushi init [dir]              # scaffold a new omakase repo
@@ -127,4 +127,4 @@ Several omakases stack in `use` order; a later omakase wins for the same key/des
 - `cmd/omasushi/plan.go` — diff → `Action{Kind, Desc, Run}`; `omakaseLinks` expands files/skills/commands
 - `cmd/omasushi/main.go` — CLI, `export`, `init`
 - `cmd/omasushi/publish.go` — `publish`: repo URL resolution/canonicalisation and the `POST /api/omakase` call to omasushi-web (`webURL` default, `$OMASUSHI_WEB_URL`, `--web`)
-- `manifest.json`, `Panel.qml`, `Model.js` (repo root) — Omarchy bar widget (`omarchy plugin add https://github.com/polidog/omasushi.git`) that shows pending actions and runs sync in a floating terminal
+- the Omarchy bar widget lives in its own repository, [polidog/omarchy-omasushi](https://github.com/polidog/omarchy-omasushi) (`omarchy plugin add https://github.com/polidog/omarchy-omasushi.git`): shows pending actions and runs sync in a floating terminal. `plugin/omasushi.yaml` here is the part that installs it
