@@ -69,7 +69,7 @@ go install github.com/polidog/omasushi/cmd/omasushi@latest
 Optional bar widget (shows pending actions, applies from the bar):
 
 ```sh
-omarchy plugin add https://github.com/polidog/omasushi.git --enable
+omarchy plugin add https://github.com/polidog/omarchy-omasushi.git --enable
 ```
 
 ## Just the skill
@@ -169,7 +169,7 @@ omasushi -H <host> <cmd>             resolve hosts.<host> as if on that machine
 
 ## Releasing
 
-Bump `version` in `manifest.json`, then either push a tag or run the
+Push a tag, or run the
 [release workflow](https://github.com/polidog/omasushi/actions/workflows/release.yml)
 from the Actions tab with the version as input (it creates the tag for you):
 
@@ -177,8 +177,9 @@ from the Actions tab with the version as input (it creates the tag for you):
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-CI checks that the tag matches `manifest.json`, builds `omasushi-vX.Y.Z-linux-{amd64,arm64}.tar.gz`
-with `checksums.txt`, and publishes a GitHub Release with auto-generated notes.
+CI builds `omasushi-vX.Y.Z-linux-{amd64,arm64}.tar.gz` with `checksums.txt`, and
+publishes a GitHub Release with auto-generated notes. The bar widget is released
+separately, from [polidog/omarchy-omasushi](https://github.com/polidog/omarchy-omasushi).
 
 ## Notes
 
@@ -186,7 +187,8 @@ with `checksums.txt`, and publishes a GitHub Release with auto-generated notes.
 - Machine-specific bits (GPU drivers, monitor layouts) go under `hosts.<hostname>`.
 - `omarchy font set` / `theme set` rewrite terminal configs in place, turning a symlink
   back into a file. Copy the new file into the omakase and `apply` again.
-- This repo is itself a split omakase, of what belongs to the tool: `plugin/` (bar widget)
+- This repo is itself a split omakase, of what belongs to the tool: `plugin/` (installs the
+  bar widget, which lives in [polidog/omarchy-omasushi](https://github.com/polidog/omarchy-omasushi))
   and `claude/` (a skill for driving omasushi, in
   [`claude/skills/omasushi`](claude/skills/omasushi), linked for whichever agent is the
   Omarchy default: Claude Code, Codex, …). `omasushi use polidog/omasushi`
