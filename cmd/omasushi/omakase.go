@@ -16,12 +16,14 @@ import (
 // omakases can be in use at once; they are layered in config order, later
 // ones winning.
 type Omakase struct {
-	Name     string // owner/repo, or owner/repo/part (base dir name for local omakases)
-	Source   string // what the user typed for the repository: owner/repo, URL, or local path
-	Part     string // sub-directory inside the repository ("" = the root manifest)
-	Repo     string // the checkout (git root); Update pulls here
-	Dir      string // Repo/Part: where omasushi.yaml and its files live
-	Local    bool   // Repo is a user path, not managed by omasushi (never pulled)
+	Name     string   // owner/repo, or owner/repo/part (base dir name for local omakases)
+	Source   string   // what the user typed for the repository: owner/repo, URL, or local path
+	Part     string   // sub-directory inside the repository ("" = the root manifest)
+	Repo     string   // the checkout (git root); Update pulls here
+	Dir      string   // Repo/Part: where omasushi.yaml and its files live
+	Local    bool     // Repo is a user path, not managed by omasushi (never pulled)
+	Uses     []string // use: declarations this omakase carries (resolved by resolveUses)
+	Via      string   // name of the omakase whose use: pulled this one in ("" = configured directly)
 	Manifest *Manifest
 	Root     *Manifest // set for a part written inline: the manifest that declares it
 }
@@ -37,9 +39,12 @@ func (r Omakase) Save() error {
 	return r.Manifest.Save(r.ManifestPath())
 }
 
-// Config is ~/.config/omasushi/config.yaml: the ordered list of omakases in use.
+// Config is ~/.config/omasushi/config.yaml: the ordered list of omakases in
+// use, plus which of them is the user's own — the one export writes to by
+// default, as opposed to other people's omakases stacked underneath.
 type Config struct {
 	Omakases []OmakaseRef `yaml:"omakases"`
+	Mine     string       `yaml:"mine,omitempty"` // Name of the user's own omakase
 }
 
 type OmakaseRef struct {
@@ -265,6 +270,7 @@ func omakasesIn(src source, repo, name string) ([]Omakase, error) {
 			}
 		}
 		r.Manifest = m
+		r.Uses = m.Use
 		return r, nil
 	}
 	root, err := dirPart("")
@@ -275,10 +281,11 @@ func omakasesIn(src source, repo, name string) ([]Omakase, error) {
 	// the repository root. Manifest points into root.Parts.Inline, which is what
 	// lets Save fold an export back into the root manifest.
 	inlinePart := func(part string) Omakase {
+		m := root.Manifest.Parts.Inline[part]
 		return Omakase{
 			Name: omakaseName(src.Name, part), Source: src.Repo, Part: part,
 			Repo: repo, Dir: repo, Local: src.Local,
-			Manifest: root.Manifest.Parts.Inline[part], Root: root.Manifest,
+			Manifest: m, Root: root.Manifest, Uses: m.Use,
 		}
 	}
 	if src.Part != "" {
@@ -309,6 +316,11 @@ func omakasesIn(src source, repo, name string) ([]Omakase, error) {
 		}
 		out = append(out, r)
 	}
+	// The root's use: belongs to the bundle as a whole; carrying it on the
+	// first part keeps its omakases layered before every part.
+	if len(out) > 0 && len(root.Manifest.Use) > 0 {
+		out[0].Uses = append(append([]string{}, root.Manifest.Use...), out[0].Uses...)
+	}
 	return out, nil
 }
 
@@ -328,6 +340,81 @@ func omakaseFromDir(manifestPath string) ([]Omakase, error) {
 	return omakasesIn(src, dir, "")
 }
 
+// resolveUses expands each omakase's use: declarations into the omakases they
+// name, layered before the declaring omakase so that it wins on conflicts.
+// Their checkouts are managed like `omasushi use` ones (and pulled by update),
+// but they are not recorded in the config: the declaring manifest is their
+// source of truth. A repository already loaded — directly, or through another
+// use: — keeps its first position, which also makes cycles harmless.
+func resolveUses(rs []Omakase) ([]Omakase, error) {
+	seen := map[string]bool{}
+	var out []Omakase
+	var add func(rs []Omakase, via string) error
+	add = func(rs []Omakase, via string) error {
+		for _, r := range rs {
+			if seen[r.Name] {
+				continue
+			}
+			seen[r.Name] = true
+			r.Via = via
+			for _, u := range r.Uses {
+				deps, err := loadUse(u, r.Repo)
+				if err != nil {
+					return fmt.Errorf("%s: use %s: %w", r.Name, u, err)
+				}
+				if err := add(deps, r.Name); err != nil {
+					return err
+				}
+			}
+			out = append(out, r)
+		}
+		return nil
+	}
+	if err := add(rs, ""); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// loadUse materialises one use: entry. A relative path resolves against the
+// declaring omakase's repository, so a repo can point at a sibling directory.
+func loadUse(entry, fromDir string) ([]Omakase, error) {
+	if strings.HasPrefix(entry, "./") || strings.HasPrefix(entry, "../") {
+		entry = filepath.Join(fromDir, entry)
+	}
+	src, err := parseSource(entry)
+	if err != nil {
+		return nil, err
+	}
+	repo, err := ensureCheckout(src)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(filepath.Join(repo, ManifestFile)); err != nil {
+		return nil, fmt.Errorf("%s has no %s", repo, ManifestFile)
+	}
+	return omakasesIn(src, repo, "")
+}
+
+// ensureCheckout returns the checkout directory for src, cloning a remote
+// source that is not on disk yet. It never pulls; `omasushi update` does.
+func ensureCheckout(src source) (string, error) {
+	if src.Local {
+		return src.Target, nil
+	}
+	repo := filepath.Join(omakasesDir(), src.Name)
+	if _, err := os.Stat(repo); err == nil {
+		return repo, nil
+	}
+	if err := os.MkdirAll(omakasesDir(), 0o755); err != nil {
+		return "", err
+	}
+	if err := runVisible("git", "clone", "--depth", "1", src.Target, repo); err != nil {
+		return "", err
+	}
+	return repo, nil
+}
+
 // Use adds an omakase: clones remote sources into omakasesDir (one checkout
 // per repository, shared by its parts), records local paths as they are.
 // `owner/repo` on a repository split into parts adds every part; re-using an
@@ -337,21 +424,17 @@ func (c *Config) Use(input string) ([]Omakase, error) {
 	if err != nil {
 		return nil, err
 	}
-	repo := src.Target
 	if !src.Local {
-		repo = filepath.Join(omakasesDir(), src.Name)
+		repo := filepath.Join(omakasesDir(), src.Name)
 		if _, err := os.Stat(repo); err == nil {
 			if err := runVisible("git", "-C", repo, "pull", "--ff-only"); err != nil {
 				return nil, err
 			}
-		} else {
-			if err := os.MkdirAll(omakasesDir(), 0o755); err != nil {
-				return nil, err
-			}
-			if err := runVisible("git", "clone", "--depth", "1", src.Target, repo); err != nil {
-				return nil, err
-			}
 		}
+	}
+	repo, err := ensureCheckout(src)
+	if err != nil {
+		return nil, err
 	}
 	if _, err := os.Stat(filepath.Join(repo, ManifestFile)); err != nil {
 		return nil, fmt.Errorf("%s has no %s", repo, ManifestFile)
@@ -393,6 +476,9 @@ func (c *Config) Remove(name string) error {
 		return fmt.Errorf("no omakase named %q", name)
 	}
 	c.Omakases = kept
+	if c.Mine == name {
+		c.Mine = ""
+	}
 	src, err := parseSource(removed.Source)
 	if err == nil && !src.Local && !c.usesRepo(src.Name) {
 		dir := filepath.Join(omakasesDir(), src.Name)

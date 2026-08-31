@@ -36,11 +36,14 @@ func usage() {
 usage: omasushi [-f omasushi.yaml] [-H host] <command> [args]
 
 omakases:
-  use <owner/repo[/part]|url|path>
+  use [--mine] <owner/repo[/part]|url|path>
                               add an omakase (clone it, or point at a local dir);
                               owner/repo takes every part of a split repository,
-                              owner/repo/herdr just that one
-  list                        show omakases in use (name, source, checkout)
+                              owner/repo/herdr just that one. --mine marks it as
+                              your own: the omakase export writes to by default
+  mine [<name>|none]          show or set your own omakase
+  list                        show omakases in use (name, source, checkout;
+                              "via X" = pulled in by X's use: declaration)
   update                      git pull every remote omakase
   remove <name>               forget an omakase (unlinks its files, deletes
                               its managed checkout)
@@ -59,7 +62,8 @@ machine:
                               (plan/apply/clean still work as aliases)
   export [--to <omakase>] [--host <name>]
                               record this machine's installed packages/plugins
-                              into an omakase (--host writes under hosts.<name>)
+                              into an omakase: your own (mine) when set, else
+                              --to picks one (--host writes under hosts.<name>)
   skill install|update|remove|list [--agent <name>]
                               put the bundled omasushi skill into the default
                               agent's global skills (~/.claude/skills,
@@ -101,13 +105,31 @@ func main() {
 		die(initOmakase(dir))
 		return
 	case "use":
-		if len(args) != 1 {
+		fs := flag.NewFlagSet("use", flag.ExitOnError)
+		mine := fs.Bool("mine", false, "mark it as your own omakase (export's default target)")
+		fs.Parse(args)
+		if fs.NArg() != 1 {
 			usage()
 		}
-		rs, err := cfg.Use(args[0])
+		rs, err := cfg.Use(fs.Arg(0))
 		die(err)
 		for _, r := range rs {
 			fmt.Printf("using %s from %s (%s)\n", r.Name, r.Source, tildify(r.Dir))
+		}
+		all, err := resolveUses(rs)
+		die(err)
+		for _, r := range all {
+			if r.Via != "" {
+				fmt.Printf("using %s (via %s) (%s)\n", r.Name, r.Via, tildify(r.Dir))
+			}
+		}
+		if *mine {
+			if len(rs) != 1 {
+				die(fmt.Errorf("%s is split into %d parts; pick your own with `omasushi mine <name>`", fs.Arg(0), len(rs)))
+			}
+			cfg.Mine = rs[0].Name
+			die(cfg.Save())
+			fmt.Printf("mine: %s — export writes here by default\n", cfg.Mine)
 		}
 		return
 	case "remove":
@@ -146,8 +168,35 @@ func main() {
 			if r.Local {
 				kind = "local"
 			}
-			fmt.Printf("%-28s %-6s %-44s %s\n", r.Name, kind, r.Source, tildify(r.Dir))
+			var note string
+			if r.Name == cfg.Mine {
+				note = "  (mine)"
+			}
+			if r.Via != "" {
+				note += "  (via " + r.Via + ")"
+			}
+			fmt.Printf("%-28s %-6s %-44s %s%s\n", r.Name, kind, r.Source, tildify(r.Dir), note)
 		}
+	case "mine":
+		if len(args) == 0 {
+			if cfg.Mine == "" {
+				fmt.Println("not set — omasushi mine <name>, or omasushi use --mine <repo>")
+			} else {
+				fmt.Println(cfg.Mine)
+			}
+			return
+		}
+		if args[0] == "none" {
+			cfg.Mine = ""
+			die(cfg.Save())
+			fmt.Println("mine: unset")
+			return
+		}
+		t, err := pickOmakase(omakases, args[0])
+		die(err)
+		cfg.Mine = t.Name
+		die(cfg.Save())
+		fmt.Printf("mine: %s — export writes here by default\n", cfg.Mine)
 	case "update":
 		die(Update(omakases))
 		die(updateInstalledSkills())
@@ -157,7 +206,7 @@ func main() {
 		fs.Parse(args)
 		have, err := Probe()
 		die(err)
-		st := gatherStatus(omakases, *host, have)
+		st := gatherStatus(omakases, *host, have, cfg.Mine)
 		if *asJSON {
 			printStatusJSON(st)
 		} else {
@@ -204,10 +253,14 @@ func main() {
 	case "export":
 		fs := flag.NewFlagSet("export", flag.ExitOnError)
 		toHost := fs.String("host", "", "write into hosts.<name> overlay")
-		to := fs.String("to", "", "omakase to write into (required when several are in use)")
+		to := fs.String("to", "", "omakase to write into (default: mine, else required when several are in use)")
 		fs.Parse(args)
-		target, err := pickOmakase(omakases, *to)
+		target, err := exportTarget(omakases, *to, cfg.Mine)
 		die(err)
+		if !target.Local && target.Name != cfg.Mine {
+			fmt.Fprintf(os.Stderr, "note: %s is a managed checkout under %s — commit & push there yourself, or keep your own omakase (`omasushi mine`)\n",
+				target.Name, tildify(omakasesDir()))
+		}
 		have, err := Probe()
 		die(err)
 		added := export(omakases, target, have, *host, *toHost)
@@ -227,17 +280,38 @@ func main() {
 
 // activeOmakases picks the omakase set: -f wins; otherwise the config; and
 // when nothing is configured, an omasushi.yaml in the working directory.
+// use: declarations are expanded, so dependencies take part in every command.
 func activeOmakases(cfg *Config, file string) ([]Omakase, error) {
-	if file != "" {
-		return omakaseFromDir(file)
+	var rs []Omakase
+	var err error
+	switch {
+	case file != "":
+		rs, err = omakaseFromDir(file)
+	case len(cfg.Omakases) > 0:
+		rs, err = LoadOmakases(cfg)
+	default:
+		if _, statErr := os.Stat(ManifestFile); statErr == nil {
+			rs, err = omakaseFromDir(ManifestFile)
+		}
 	}
-	if len(cfg.Omakases) > 0 {
-		return LoadOmakases(cfg)
+	if err != nil || rs == nil {
+		return rs, err
 	}
-	if _, err := os.Stat(ManifestFile); err == nil {
-		return omakaseFromDir(ManifestFile)
+	return resolveUses(rs)
+}
+
+// exportTarget picks where export writes: --to when given, else the user's
+// own omakase (mine) when it is among the active ones.
+func exportTarget(omakases []Omakase, to, mine string) (*Omakase, error) {
+	if to == "" {
+		for _, r := range omakases {
+			if r.Name == mine {
+				to = mine
+				break
+			}
+		}
 	}
-	return nil, nil
+	return pickOmakase(omakases, to)
 }
 
 func pickOmakase(omakases []Omakase, name string) (*Omakase, error) {
@@ -251,7 +325,7 @@ func pickOmakase(omakases []Omakase, name string) (*Omakase, error) {
 		for _, r := range omakases {
 			names = append(names, r.Name)
 		}
-		return nil, fmt.Errorf("several omakases in use (%s); pick one with --to", strings.Join(names, ", "))
+		return nil, fmt.Errorf("several omakases in use (%s); pick one with --to, or mark yours once with `omasushi mine <name>`", strings.Join(names, ", "))
 	}
 	for i := range omakases {
 		if omakases[i].Name == name {
@@ -266,10 +340,14 @@ func printPlan(actions []Action, extras []string) {
 		fmt.Println("up to date")
 	}
 	for _, a := range actions {
-		fmt.Printf("+ %-15s %s\n", a.Kind, a.Desc)
+		if a.Omakase != "" {
+			fmt.Printf("+ %-15s %-44s <- %s\n", a.Kind, a.Desc, a.Omakase)
+		} else {
+			fmt.Printf("+ %-15s %s\n", a.Kind, a.Desc)
+		}
 	}
 	if len(extras) > 0 {
-		fmt.Println("\ninstalled but not in any omakase (run `omasushi export` to record):")
+		fmt.Println("\ninstalled but not in any omakase (run `omasushi export` to record them as yours):")
 		for _, e := range extras {
 			fmt.Println("  ?", e)
 		}
@@ -418,6 +496,10 @@ func initOmakase(dir string) error {
 name: %s
 description: ""
 
+# use:                # build on other people's omakases; this file wins on conflicts
+#   - polidog/omakase/kitty
+#   - someone/nvim-setup
+
 packages:
   pacman: []          # official repos (write by hand)
   aur: []             # filled in by "omasushi export"
@@ -463,7 +545,11 @@ func runActions(actions []Action) int {
 	}
 	var failed []failure
 	for _, a := range actions {
-		fmt.Printf("==> %s: %s\n", a.Kind, a.Desc)
+		if a.Omakase != "" {
+			fmt.Printf("==> %s: %s (%s)\n", a.Kind, a.Desc, a.Omakase)
+		} else {
+			fmt.Printf("==> %s: %s\n", a.Kind, a.Desc)
+		}
 		if err := a.Run(); err != nil {
 			fmt.Fprintln(os.Stderr, "omasushi:", err)
 			failed = append(failed, failure{a, err})

@@ -23,12 +23,46 @@ type link struct {
 
 // Plan diffs the layered omakases against the probed state and returns the
 // actions needed. It never removes anything; extras are reported separately.
+// Each action carries the omakase behind it, so the plan can say where a
+// pending install comes from when several omakases are stacked.
 func Plan(omakases []Omakase, host string, have *State) (actions []Action, extras []string) {
 	var want Overlay
 	var links []link
 	agent := resolveAgent(omakases, host)
+	// prov[key] attributes each declared item: the first omakase to list it
+	// (the item is installed on its account), the last to set a scalar (it
+	// wins the merge).
+	prov := map[string]string{}
+	first := func(key, name string) {
+		if _, ok := prov[key]; !ok {
+			prov[key] = name
+		}
+	}
 	for _, r := range omakases {
 		o := r.Manifest.Resolve(host)
+		for _, p := range o.Packages.Pacman {
+			first("pacman:"+p, r.Name)
+		}
+		for _, p := range o.Packages.Aur {
+			first("aur:"+p, r.Name)
+		}
+		if o.Omarchy.Font != "" {
+			prov["font"] = r.Name
+		}
+		for kind, v := range map[string]string{
+			"default-agent": o.Omarchy.Defaults.Agent, "default-browser": o.Omarchy.Defaults.Browser,
+			"default-editor": o.Omarchy.Defaults.Editor, "default-terminal": o.Omarchy.Defaults.Terminal,
+		} {
+			if v != "" {
+				prov[kind] = r.Name
+			}
+		}
+		for _, p := range o.Omarchy.Plugins {
+			first("omarchy:"+normalizeGitURL(p.URL), r.Name)
+		}
+		for _, p := range o.Herdr.Plugins {
+			first("herdr:"+p.Source, r.Name)
+		}
 		want = want.merge(o)
 		links = append(links, omakaseLinks(r, o, agent)...)
 	}
@@ -44,32 +78,47 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 			pacman = append(pacman, p)
 		}
 	}
-	if len(pacman) > 0 {
-		pk := pacman
-		actions = append(actions, Action{Kind: "pacman", Desc: fmt.Sprintf("install %s", strings.Join(pk, " ")), Run: func() error {
-			return runVisible("omarchy-pkg-add", pk...)
-		}})
+	// One install action per declaring omakase, so a stacked plan reads
+	// "install foo bar <- someone/omakase" rather than one anonymous batch.
+	installs := func(kind, cmd string, missing []string) {
+		byOm := map[string][]string{}
+		var names []string
+		for _, p := range missing {
+			n := prov[kind+":"+p]
+			if _, ok := byOm[n]; !ok {
+				names = append(names, n)
+			}
+			byOm[n] = append(byOm[n], p)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			pk := byOm[n]
+			actions = append(actions, Action{Kind: kind, Omakase: n, Desc: fmt.Sprintf("install %s", strings.Join(pk, " ")), Run: func() error {
+				return runVisible(cmd, pk...)
+			}})
+		}
 	}
-	if len(aur) > 0 {
-		pk := aur
-		actions = append(actions, Action{Kind: "aur", Desc: fmt.Sprintf("install %s", strings.Join(pk, " ")), Run: func() error {
-			return runVisible("omarchy-pkg-aur-add", pk...)
-		}})
-	}
+	installs("pacman", "omarchy-pkg-add", pacman)
+	installs("aur", "omarchy-pkg-aur-add", aur)
 
 	if f := want.Omarchy.Font; f != "" && f != have.Font {
-		actions = append(actions, Action{Kind: "font", Desc: fmt.Sprintf("%s -> %s", have.Font, f), Run: func() error {
+		actions = append(actions, Action{Kind: "font", Omakase: prov["font"], Desc: fmt.Sprintf("%s -> %s", have.Font, f), Run: func() error {
 			return runVisible("omarchy-font-set", f)
 		}})
 	}
-	actions = append(actions, planDefaults(want.Omarchy.Defaults, have.Defaults)...)
+	defaults := planDefaults(want.Omarchy.Defaults, have.Defaults)
+	for i := range defaults {
+		defaults[i].Omakase = prov[defaults[i].Kind]
+	}
+	actions = append(actions, defaults...)
 
 	for _, p := range want.Omarchy.Plugins {
 		p := p
+		from := prov["omarchy:"+normalizeGitURL(p.URL)]
 		inst, ok := have.OmarchyPlugins[normalizeGitURL(p.URL)]
 		switch {
 		case !ok:
-			actions = append(actions, Action{Kind: "omarchy-add", Desc: fmt.Sprintf("add %s (enable=%v)", p.URL, p.Enable), Run: func() error {
+			actions = append(actions, Action{Kind: "omarchy-add", Omakase: from, Desc: fmt.Sprintf("add %s (enable=%v)", p.URL, p.Enable), Run: func() error {
 				args := []string{p.URL, "--yes"}
 				if p.Enable {
 					args = append(args, "--enable")
@@ -78,7 +127,7 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 			}})
 		case p.Enable && !inst.Enabled:
 			id := inst.ID
-			actions = append(actions, Action{Kind: "omarchy-enable", Desc: "enable " + id, Run: func() error {
+			actions = append(actions, Action{Kind: "omarchy-enable", Omakase: from, Desc: "enable " + id, Run: func() error {
 				return runVisible("omarchy-plugin-enable", id)
 			}})
 		}
@@ -89,7 +138,7 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 		if have.HerdrPlugins[p.Source] {
 			continue
 		}
-		actions = append(actions, Action{Kind: "herdr-add", Desc: "install " + p.Source, Run: func() error {
+		actions = append(actions, Action{Kind: "herdr-add", Omakase: prov["herdr:"+p.Source], Desc: "install " + p.Source, Run: func() error {
 			args := []string{"plugin", "install", p.Source, "--yes"}
 			if p.Ref != "" {
 				args = append(args, "--ref", p.Ref)
