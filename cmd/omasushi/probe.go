@@ -180,7 +180,7 @@ func lines(s string) []string {
 	return strings.Split(s, "\n")
 }
 
-// runVisible executes a command with stdio attached, for apply.
+// runVisible executes a command with stdio attached, for sync.
 func runVisible(name string, args ...string) error {
 	fmt.Printf("$ %s %s\n", name, strings.Join(args, " "))
 	c := exec.Command(name, args...)

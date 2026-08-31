@@ -1,6 +1,6 @@
 .pragma library
 
-// Runs `omasushi plan --json` with the PATH a login shell would have, so a
+// Runs `omasushi diff --json` with the PATH a login shell would have, so a
 // binary in ~/go/bin, ~/.local/bin or a mise-managed GOBIN is found even
 // when the shell was started before it was installed.
 var pathFix = 'export PATH="$HOME/go/bin:$HOME/.local/bin:$PATH"; '
@@ -8,7 +8,7 @@ var pathFix = 'export PATH="$HOME/go/bin:$HOME/.local/bin:$PATH"; '
 
 var planScript = pathFix
   + 'if ! command -v omasushi >/dev/null 2>&1; then echo \'{"missing":true}\'; exit 0; fi; '
-  + 'omasushi plan --json 2>/dev/null || echo \'{"error":true}\''
+  + 'omasushi diff --json 2>/dev/null || omasushi plan --json 2>/dev/null || echo \'{"error":true}\''
 
 // Same PATH fix for the interactive commands run in a floating terminal.
 function terminalCommand(sub) {
@@ -51,7 +51,7 @@ function kindIcon(kind) {
 
 function statusLine(plan) {
   if (plan.missing) return "OMASUSHI NOT INSTALLED"
-  if (plan.error) return "PLAN FAILED"
+  if (plan.error) return "DIFF FAILED"
   if (plan.omakases.length === 0) return "NO OMAKASE IN USE"
   var n = plan.actions.length
   if (n === 0) return "UP TO DATE"

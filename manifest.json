@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "polidog",
   "license": "MIT",
-  "description": "Shows how far this machine has drifted from your omasushi omakases, and applies them from the bar.",
+  "description": "Shows how far this machine has drifted from your omasushi omakases, and syncs them from the bar.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "omasushi",
-    "description": "Pending omakase actions in the bar; click for the plan, apply or export in a floating terminal, or open an omakase's omasushi.yaml in your editor.",
+    "description": "Pending omakase actions in the bar; click for the diff, sync or export in a floating terminal, or open an omakase's omasushi.yaml in your editor.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
@@ -28,7 +28,7 @@
         "key": "refreshMinutes",
         "type": "number",
         "label": "Refresh interval (minutes)",
-        "description": "How often to re-run `omasushi plan` in the background.",
+        "description": "How often to re-run `omasushi diff` in the background.",
         "defaultValue": 10
       },
       {
