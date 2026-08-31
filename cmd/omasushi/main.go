@@ -49,8 +49,9 @@ omakases:
                               its managed checkout)
   init [dir]                  scaffold a new omakase repository
   publish [<name>|<repo>|<path>]
-                              put an omakase on omasushi-web (POSTs its repo
-                              URL to the site's API; --browser uses the form)
+                              put an omakase on omasushi-web: opens the
+                              prefilled submission issue on GitHub, where a
+                              workflow validates it onto the belt
 
 machine:
   status [--json]             where am I: omakases, their git state, this

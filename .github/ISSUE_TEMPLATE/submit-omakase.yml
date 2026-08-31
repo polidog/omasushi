@@ -1,0 +1,23 @@
+name: Submit an omakase
+description: Put your omakase on the omasushi.dev conveyor belt
+title: "Submit an omakase"
+labels: ["omakase-submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for serving a plate! Make sure the repository is **public** and has
+        `omasushi.yaml` committed at its root (on `main` or `master`).
+
+        A workflow validates the repository and, when it checks out, puts it on the
+        belt automatically and comments the plate's URL here — no human review.
+        If validation fails the error is commented instead; fix the repository and
+        **edit this issue** to run it again.
+  - type: input
+    id: repo
+    attributes:
+      label: Repository
+      description: owner/repo, or a github.com / gitlab.com URL
+      placeholder: your-name/my-omakase
+    validations:
+      required: true
