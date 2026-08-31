@@ -126,4 +126,4 @@ Several omakases stack in `use` order; a later omakase wins for the same key/des
 - `cmd/omasushi/plan.go` — diff → `Action{Kind, Desc, Run}`; `omakaseLinks` expands files/skills/commands
 - `cmd/omasushi/main.go` — CLI, `export`, `init`
 - `cmd/omasushi/publish.go` — `publish`: repo URL resolution/canonicalisation and the `POST /api/omakase` call to omasushi-web (`webURL` default, `$OMASUSHI_WEB_URL`, `--web`)
-- `manifest.json`, `Panel.qml`, `Model.js` (repo root) — Omarchy bar widget (`omarchy plugin add https://github.com/polidog/omasushi.git`) that shows pending actions and runs apply in a floating terminal
+- the Omarchy bar widget lives in its own repository, [polidog/omarchy-omasushi](https://github.com/polidog/omarchy-omasushi) (`omarchy plugin add https://github.com/polidog/omarchy-omasushi.git`): shows pending actions and runs apply in a floating terminal. `plugin/omasushi.yaml` here is the part that installs it

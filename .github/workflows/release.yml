@@ -30,15 +30,6 @@ jobs:
           case "$v" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::version must look like v1.2.3, got '$v'"; exit 1 ;; esac
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      - name: Check manifest.json version matches
-        run: |
-          want="${{ steps.v.outputs.version }}"; want="${want#v}"
-          have="$(jq -r .version manifest.json)"
-          if [ "$have" != "$want" ]; then
-            echo "::error file=manifest.json::manifest.json version is $have but releasing $want — bump it first"
-            exit 1
-          fi
-
       - name: Create tag (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
         run: |
