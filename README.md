@@ -48,7 +48,8 @@ takes one, and stacks with parts from other people's repos.
 
 `omasushi` diffs the omakase against the real machine and drives the existing
 `omarchy` / `herdr` / `yay` CLIs to close the gap. It never uninstalls anything;
-`omasushi clean` takes the symlinks back out and restores the `.bak` originals.
+`omasushi clean` takes the symlinks back out and restores the `.bak` originals; a
+link with no `.bak` leaves nothing behind, and is named at the end of the run.
 
 ## Install
 
@@ -69,7 +70,7 @@ go install github.com/polidog/omasushi/cmd/omasushi@latest
 Optional bar widget (shows pending actions, applies from the bar):
 
 ```sh
-omarchy plugin add https://github.com/polidog/omasushi.git --enable
+omarchy plugin add https://github.com/polidog/omarchy-omasushi.git --enable
 ```
 
 ## Just the skill
@@ -155,7 +156,8 @@ omasushi plan [--json]               diff (json is what the bar widget reads)
 omasushi apply                       make it so; an action that fails is reported
                                      and the rest still run (exit 1 at the end)
 omasushi clean [name] [--dry-run]    undo apply's links: remove the symlinks, put
-                                     .bak originals back (never uninstalls)
+                                     .bak originals back (never uninstalls); links
+                                     with no .bak are listed, since they leave a hole
 omasushi export [--to omakase] [--host name]
                                      record installed things into an omakase (add-only)
 omasushi init [dir]                  scaffold an omakase
@@ -170,7 +172,7 @@ omasushi -H <host> <cmd>             resolve hosts.<host> as if on that machine
 
 ## Releasing
 
-Bump `version` in `manifest.json`, then either push a tag or run the
+Push a tag, or run the
 [release workflow](https://github.com/polidog/omasushi/actions/workflows/release.yml)
 from the Actions tab with the version as input (it creates the tag for you):
 
@@ -178,8 +180,9 @@ from the Actions tab with the version as input (it creates the tag for you):
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-CI checks that the tag matches `manifest.json`, builds `omasushi-vX.Y.Z-linux-{amd64,arm64}.tar.gz`
-with `checksums.txt`, and publishes a GitHub Release with auto-generated notes.
+CI builds `omasushi-vX.Y.Z-linux-{amd64,arm64}.tar.gz` with `checksums.txt`, and
+publishes a GitHub Release with auto-generated notes. The bar widget is released
+separately, from [polidog/omarchy-omasushi](https://github.com/polidog/omarchy-omasushi).
 
 ## Notes
 
@@ -187,7 +190,8 @@ with `checksums.txt`, and publishes a GitHub Release with auto-generated notes.
 - Machine-specific bits (GPU drivers, monitor layouts) go under `hosts.<hostname>`.
 - `omarchy font set` / `theme set` rewrite terminal configs in place, turning a symlink
   back into a file. Copy the new file into the omakase and `apply` again.
-- This repo is itself a split omakase, of what belongs to the tool: `plugin/` (bar widget)
+- This repo is itself a split omakase, of what belongs to the tool: `plugin/` (installs the
+  bar widget, which lives in [polidog/omarchy-omasushi](https://github.com/polidog/omarchy-omasushi))
   and `claude/` (a skill for driving omasushi, in
   [`claude/skills/omasushi`](claude/skills/omasushi), linked for whichever agent is the
   Omarchy default: Claude Code, Codex, …). `omasushi use polidog/omasushi`
