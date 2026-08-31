@@ -6,11 +6,29 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 )
 
+// version is set by the release build (-X main.version), which only works on a
+// constant initialiser — hence the init below rather than a call here.
 var version = "dev"
+
+// A `go install` binary carries no ldflags, so fall back to the module version
+// the toolchain stamped into it (v0.2.0, or a pseudo-version for a checkout).
+func init() {
+	if version != "dev" {
+		return
+	}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	if v := bi.Main.Version; v != "" && v != "(devel)" {
+		version = v
+	}
+}
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `omasushi — share your Omarchy setup as an omakase repository
