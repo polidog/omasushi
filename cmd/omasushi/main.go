@@ -164,9 +164,8 @@ func main() {
 			fmt.Println("up to date")
 			return
 		}
-		for _, a := range actions {
-			fmt.Printf("==> %s: %s\n", a.Kind, a.Desc)
-			die(a.Run())
+		if failed := runActions(actions); failed > 0 {
+			os.Exit(1)
 		}
 	case "clean":
 		fs := flag.NewFlagSet("clean", flag.ExitOnError)
@@ -431,6 +430,35 @@ hosts: {}             # <hostname>: { packages: ..., files: ... } overlays
 	fmt.Printf("created %s\n", mp)
 	fmt.Println("next: omasushi -f", mp, "export   # record what this machine has")
 	return nil
+}
+
+// runActions works through the plan, carrying on past an action that fails so
+// that one package the mirror does not have, or one plugin already installed
+// under another URL, does not hold back every link queued behind it. Failures
+// are repeated at the end, because by then the output that follows them has
+// usually scrolled them out of sight. Returns how many failed.
+func runActions(actions []Action) int {
+	type failure struct {
+		action Action
+		err    error
+	}
+	var failed []failure
+	for _, a := range actions {
+		fmt.Printf("==> %s: %s\n", a.Kind, a.Desc)
+		if err := a.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "omasushi:", err)
+			failed = append(failed, failure{a, err})
+		}
+	}
+	if len(failed) == 0 {
+		return 0
+	}
+	fmt.Fprintf(os.Stderr, "\n%d of %d actions failed; the rest were applied:\n", len(failed), len(actions))
+	for _, f := range failed {
+		fmt.Fprintf(os.Stderr, "  %-15s %s: %v\n", f.action.Kind, f.action.Desc, f.err)
+	}
+	fmt.Fprintln(os.Stderr, "run `omasushi apply` again once they are sorted out.")
+	return len(failed)
 }
 
 func die(err error) {

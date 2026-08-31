@@ -153,7 +153,8 @@ omasushi list | update | remove <name>
 omasushi status [--json]             where am I: omakases + their git state, this
                                      machine's setup, pending/unrecorded counts
 omasushi plan [--json]               diff (json is what the bar widget reads)
-omasushi apply                       make it so
+omasushi apply                       make it so; an action that fails is reported
+                                     and the rest still run (exit 1 at the end)
 omasushi clean [name] [--dry-run]    undo apply's links: remove the symlinks, put
                                      .bak originals back (never uninstalls); links
                                      with no .bak are listed, since they leave a hole
