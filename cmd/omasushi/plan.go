@@ -39,7 +39,7 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 		}
 	}
 	for _, r := range omakases {
-		o := r.Manifest.Resolve(host)
+		o := r.Resolve(host)
 		for _, p := range o.Packages.Pacman {
 			first("pacman:"+p, r.Name)
 		}
@@ -234,7 +234,7 @@ var agentDirs = map[string]struct{ skills, commands string }{
 func resolveAgent(omakases []Omakase, host string) string {
 	var want Overlay
 	for _, r := range omakases {
-		want = want.merge(r.Manifest.Resolve(host))
+		want = want.merge(r.Resolve(host))
 	}
 	if want.Omarchy.Defaults.Agent != "" {
 		return want.Omarchy.Defaults.Agent
@@ -263,7 +263,7 @@ func omakaseLinks(r Omakase, o Overlay, agent string) []link {
 		src, _ := filepath.Abs(filepath.Join(r.Dir, s))
 		out = append(out, link{"file-link", r.Name, fmt.Sprintf("%s -> %s", s, o.Files[s]), src, expandHome(o.Files[s])})
 	}
-	out = append(out, agentLinks(r, o.Claude, agentDirs["claude"].skills, agentDirs["claude"].commands)...)
+	out = append(out, agentLinks(r, o.Claude, "claude", agentDirs["claude"].skills, agentDirs["claude"].commands)...)
 	if o.Agent.Skills != "" || o.Agent.Commands != "" {
 		d, ok := agentDirs[agent]
 		if !ok {
@@ -272,20 +272,22 @@ func omakaseLinks(r Omakase, o Overlay, agent string) []link {
 			if o.Agent.Commands != "" && d.commands == "" {
 				fmt.Fprintf(os.Stderr, "%s: agent.commands: %s has no prompt-commands directory; skipped\n", r.Name, agent)
 			}
-			out = append(out, agentLinks(r, o.Agent, d.skills, d.commands)...)
+			out = append(out, agentLinks(r, o.Agent, "agent", d.skills, d.commands)...)
 		}
 	}
 	return out
 }
 
 // agentLinks links each skill directory of c.Skills under skillsDir and each
-// *.md of c.Commands under commandsDir (either "" = skip).
-func agentLinks(r Omakase, c Claude, skillsDir, commandsDir string) []link {
+// *.md of c.Commands under commandsDir (either "" = skip). section is the
+// manifest path the two directories sit under ("claude" or "agent"), which is
+// what a filtered use: names to take single skills or commands.
+func agentLinks(r Omakase, c Claude, section, skillsDir, commandsDir string) []link {
 	var out []link
 	if c.Skills != "" && skillsDir != "" {
 		dir := filepath.Join(r.Dir, c.Skills)
 		for _, e := range readDirSorted(dir) {
-			if !e.IsDir() {
+			if !e.IsDir() || !r.Only.keeps(section+".skills", e.Name()) {
 				continue
 			}
 			src := filepath.Join(dir, e.Name())
@@ -297,6 +299,10 @@ func agentLinks(r Omakase, c Claude, skillsDir, commandsDir string) []link {
 		dir := filepath.Join(r.Dir, c.Commands)
 		for _, e := range readDirSorted(dir) {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				continue
+			}
+			if !r.Only.keeps(section+".commands", strings.TrimSuffix(e.Name(), ".md")) &&
+				!r.Only.keeps(section+".commands", e.Name()) {
 				continue
 			}
 			src := filepath.Join(dir, e.Name())

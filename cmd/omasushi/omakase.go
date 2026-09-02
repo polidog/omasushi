@@ -16,16 +16,23 @@ import (
 // omakases can be in use at once; they are layered in config order, later
 // ones winning.
 type Omakase struct {
-	Name     string   // owner/repo, or owner/repo/part (base dir name for local omakases)
-	Source   string   // what the user typed for the repository: owner/repo, URL, or local path
-	Part     string   // sub-directory inside the repository ("" = the root manifest)
-	Repo     string   // the checkout (git root); Update pulls here
-	Dir      string   // Repo/Part: where omasushi.yaml and its files live
-	Local    bool     // Repo is a user path, not managed by omasushi (never pulled)
-	Uses     []string // use: declarations this omakase carries (resolved by resolveUses)
-	Via      string   // name of the omakase whose use: pulled this one in ("" = configured directly)
+	Name     string    // owner/repo, or owner/repo/part (base dir name for local omakases)
+	Source   string    // what the user typed for the repository: owner/repo, URL, or local path
+	Part     string    // sub-directory inside the repository ("" = the root manifest)
+	Repo     string    // the checkout (git root); Update pulls here
+	Dir      string    // Repo/Part: where omasushi.yaml and its files live
+	Local    bool      // Repo is a user path, not managed by omasushi (never pulled)
+	Uses     []Use     // use: declarations this omakase carries (resolved by resolveUses)
+	Via      string    // name of the omakase whose use: pulled this one in ("" = configured directly)
+	Only     Selection // set when a filtered use: reached it: take just these items (nil = all of it)
 	Manifest *Manifest
 	Root     *Manifest // set for a part written inline: the manifest that declares it
+}
+
+// Resolve is this omakase's desired state for host: its manifest with the
+// host overlay merged on, narrowed to what a filtered use: takes from it.
+func (r Omakase) Resolve(host string) Overlay {
+	return r.Manifest.Resolve(host).filter(r.Only)
 }
 
 func (r Omakase) ManifestPath() string { return filepath.Join(r.Dir, ManifestFile) }
@@ -319,7 +326,7 @@ func omakasesIn(src source, repo, name string) ([]Omakase, error) {
 	// The root's use: belongs to the bundle as a whole; carrying it on the
 	// first part keeps its omakases layered before every part.
 	if len(out) > 0 && len(root.Manifest.Use) > 0 {
-		out[0].Uses = append(append([]string{}, root.Manifest.Use...), out[0].Uses...)
+		out[0].Uses = append(append([]Use{}, root.Manifest.Use...), out[0].Uses...)
 	}
 	return out, nil
 }
@@ -344,41 +351,65 @@ func omakaseFromDir(manifestPath string) ([]Omakase, error) {
 // name, layered before the declaring omakase so that it wins on conflicts.
 // Their checkouts are managed like `omasushi use` ones (and pulled by update),
 // but they are not recorded in the config: the declaring manifest is their
-// source of truth. A repository already loaded — directly, or through another
-// use: — keeps its first position, which also makes cycles harmless.
+// source of truth.
+//
+// An entry with only: narrows what is taken, and the narrowing governs
+// everything that entry pulls in — the used omakase's own use: chain included
+// — so cherry-picking one package never drags a stranger's whole tree in
+// behind it. A part left with nothing to contribute drops out entirely rather
+// than sit in `list` doing nothing.
+//
+// A repository already loaded — directly, or through another use: — keeps its
+// first position, which also makes cycles harmless; reaching it a second time
+// only widens what is taken from it.
 func resolveUses(rs []Omakase) ([]Omakase, error) {
-	seen := map[string]bool{}
-	var out []Omakase
-	var add func(rs []Omakase, via string) error
-	add = func(rs []Omakase, via string) error {
+	at := map[string]*Omakase{}
+	var out []*Omakase
+	var add func(rs []Omakase, via string, only Selection) error
+	add = func(rs []Omakase, via string, only Selection) error {
 		for _, r := range rs {
-			if seen[r.Name] {
+			if have, ok := at[r.Name]; ok {
+				have.Only = widen(have.Only, only)
 				continue
 			}
-			seen[r.Name] = true
-			r.Via = via
+			r.Via, r.Only = via, only
+			at[r.Name] = &r
 			for _, u := range r.Uses {
 				deps, err := loadUse(u, r.Repo)
 				if err != nil {
-					return fmt.Errorf("%s: use %s: %w", r.Name, u, err)
+					return fmt.Errorf("%s: use %s: %w", r.Name, u.Source, err)
 				}
-				if err := add(deps, r.Name); err != nil {
+				// An only: already in force keeps its say over the whole
+				// chain; a wider one below it cannot widen it back.
+				sub := only
+				if sub == nil {
+					sub = u.Only
+				}
+				if err := add(deps, r.Name, sub); err != nil {
 					return err
 				}
 			}
-			out = append(out, r)
+			out = append(out, at[r.Name])
 		}
 		return nil
 	}
-	if err := add(rs, ""); err != nil {
+	if err := add(rs, "", nil); err != nil {
 		return nil, err
 	}
-	return out, nil
+	final := make([]Omakase, 0, len(out))
+	for _, r := range out {
+		if r.Only != nil && !r.Manifest.selects(r.Only) {
+			continue
+		}
+		final = append(final, *r)
+	}
+	return final, nil
 }
 
 // loadUse materialises one use: entry. A relative path resolves against the
 // declaring omakase's repository, so a repo can point at a sibling directory.
-func loadUse(entry, fromDir string) ([]Omakase, error) {
+func loadUse(u Use, fromDir string) ([]Omakase, error) {
+	entry := u.Source
 	if strings.HasPrefix(entry, "./") || strings.HasPrefix(entry, "../") {
 		entry = filepath.Join(fromDir, entry)
 	}

@@ -24,18 +24,19 @@ type Status struct {
 }
 
 type OmakaseStatus struct {
-	Name     string `json:"name"`
-	Source   string `json:"source"`
-	Dir      string `json:"dir"`
-	Local    bool   `json:"local"`
-	Mine     bool   `json:"mine,omitempty"` // the user's own omakase (export's default target)
-	Via      string `json:"via,omitempty"`  // pulled in by this omakase's use: declaration
-	HasHost  bool   `json:"hasHostOverlay"` // declares hosts.<host>
-	Branch   string `json:"branch,omitempty"`
-	Commit   string `json:"commit,omitempty"`
-	Modified int    `json:"modified"` // uncommitted changes (git status --porcelain)
-	Ahead    int    `json:"ahead"`    // commits not pushed
-	Behind   int    `json:"behind"`   // commits not pulled (as of last fetch)
+	Name     string   `json:"name"`
+	Source   string   `json:"source"`
+	Dir      string   `json:"dir"`
+	Local    bool     `json:"local"`
+	Mine     bool     `json:"mine,omitempty"` // the user's own omakase (export's default target)
+	Via      string   `json:"via,omitempty"`  // pulled in by this omakase's use: declaration
+	Only     []string `json:"only,omitempty"` // manifest paths a filtered use: takes from it
+	HasHost  bool     `json:"hasHostOverlay"` // declares hosts.<host>
+	Branch   string   `json:"branch,omitempty"`
+	Commit   string   `json:"commit,omitempty"`
+	Modified int      `json:"modified"` // uncommitted changes (git status --porcelain)
+	Ahead    int      `json:"ahead"`    // commits not pushed
+	Behind   int      `json:"behind"`   // commits not pulled (as of last fetch)
 }
 
 type MachineStatus struct {
@@ -57,7 +58,7 @@ type SyncStatus struct {
 func gatherStatus(omakases []Omakase, host string, have *State, mine string) Status {
 	st := Status{Host: host, Config: configPath(), Omakases: []OmakaseStatus{}}
 	for _, r := range omakases {
-		o := OmakaseStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local, Mine: mine != "" && r.Name == mine, Via: r.Via}
+		o := OmakaseStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local, Mine: mine != "" && r.Name == mine, Via: r.Via, Only: r.Only.paths()}
 		if r.Manifest != nil {
 			_, o.HasHost = r.Manifest.Hosts[host]
 		}
@@ -88,7 +89,7 @@ func gatherStatus(omakases []Omakase, host string, have *State, mine string) Sta
 	}
 	agent := resolveAgent(omakases, host)
 	for _, r := range omakases {
-		for _, l := range omakaseLinks(r, r.Manifest.Resolve(host), agent) {
+		for _, l := range omakaseLinks(r, r.Resolve(host), agent) {
 			st.Sync.Links++
 			if cur, err := os.Readlink(l.dst); err == nil && cur == l.src {
 				st.Sync.Linked++
@@ -128,6 +129,9 @@ func printStatus(st Status) {
 		}
 		if o.Via != "" {
 			notes = append(notes, "via "+o.Via)
+		}
+		if len(o.Only) > 0 {
+			notes = append(notes, "only "+strings.Join(o.Only, ", "))
 		}
 		if o.Modified > 0 {
 			notes = append(notes, fmt.Sprintf("%d modified", o.Modified))

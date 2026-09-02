@@ -12,6 +12,11 @@ description: What this setup is about, in one line.
 # use:
 #   - polidog/omakase/kitty
 #   - someone/nvim-setup
+#   - source: someone/big        # or take just the items you came for; the rest
+#     only:                      # stays on the belt, their own use: chain included
+#       packages.aur: [kitty]    # keys are paths into their manifest; a list under
+#       files: [files/kitty.conf] # a leaf names its entries, no list takes it whole
+#       agent.skills: [review]
 
 # Prefer feature-sized pieces others can mix and match? Write them under parts:
 # instead of the sections below — `omasushi use you/repo` takes all of them,
