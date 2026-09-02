@@ -118,6 +118,30 @@ packages:
 `omasushi use you/my-setup` pulls the whole stack in (dependencies show as
 `via my-setup` in `list`/`status`), and a new machine needs just that one line.
 
+Don't want all of someone's omakase? Take the items you came for with `only:`,
+and the rest stays on the belt:
+
+```yaml
+use:
+  - source: someone/big
+    only:
+      packages.aur: [kitty]              # just this package
+      files: [files/kitty/kitty.conf]    # just this dotfile
+      agent.skills: [review]             # just this skill out of their skills/
+```
+
+`only:` keys are paths into the used omakase's manifest (`packages.aur`,
+`omarchy.font`, `omarchy.plugins`, `herdr.plugins`, `files`,
+`agent.skills` …). Under a leaf the list names its own entries; under a section
+it names the sub-keys to descend into (`packages: [aur]`), and a key with no
+list takes everything under it (`herdr.plugins:`). A path that addresses
+nothing is an error, so a typo won't quietly take nothing.
+
+The narrowing covers everything that entry pulls in — including the used
+omakase's own `use:` chain — so cherry-picking one package never drags a
+stranger's whole tree in behind it. `list` and `status` show what was taken
+(`only packages.aur, files`).
+
 Mark it as yours with `omasushi use --mine you/my-setup` (or `omasushi mine <name>`
 later): `export` then records this machine's unlisted installs there without
 `--to`, and never mixes in anything a `use:`d omakase already declares — the
@@ -154,7 +178,7 @@ comments the plate's URL on the issue. `--dry-run` only prints the issue URL;
 
 | key | what sync does |
 |---|---|
-| `use` | load these omakases (owner/repo[/part], URL, or path) underneath this one — it wins on conflicts; see "Build your own on top of others'" |
+| `use` | load these omakases (owner/repo[/part], URL, or path) underneath this one — it wins on conflicts. An entry may be `{source, only}` to take only the items `only:` names; see "Build your own on top of others'" |
 | `packages.pacman` / `packages.aur` | `omarchy-pkg-add` / `omarchy-pkg-aur-add` for missing ones |
 | `omarchy.font` | `omarchy-font-set` |
 | `omarchy.defaults.{agent,browser,editor,terminal}` | `omarchy-default-*` |

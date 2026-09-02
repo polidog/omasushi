@@ -40,6 +40,29 @@ func TestAgentLinks(t *testing.T) {
 	}
 }
 
+// A filtered use: picks single skills and commands out of a shared directory:
+// the omakase is linked, but only for the entries only: names.
+func TestAgentLinksHonourOnly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := t.TempDir()
+	for _, p := range []string{"skills/one/SKILL.md", "skills/two/SKILL.md", "commands/go.md", "commands/stop.md"} {
+		os.MkdirAll(filepath.Join(dir, filepath.Dir(p)), 0o755)
+		os.WriteFile(filepath.Join(dir, p), []byte("x"), 0o644)
+	}
+	r := Omakase{Name: "t", Dir: dir, Only: Selection{"agent.skills": {"one"}, "agent.commands": {"go"}}}
+	o := Overlay{Agent: Claude{Skills: "skills", Commands: "commands"}}.filter(r.Only)
+
+	var got []string
+	for _, l := range omakaseLinks(r, o, "claude") {
+		got = append(got, strings.TrimPrefix(l.dst, home))
+	}
+	want := []string{"/.claude/skills/one", "/.claude/commands/go.md"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func TestResolveAgent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

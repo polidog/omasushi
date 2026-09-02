@@ -63,6 +63,7 @@ that declares parts is only their index: its own top-level sections are not appl
 3. **Fresh machine** → `go install github.com/polidog/omasushi/cmd/omasushi@latest` → `omasushi use owner/repo` → `omasushi sync`
 4. **Publish your setup** → `omasushi init my-omakase` → copy dotfiles under `files/`, skills under `skills/` → `omasushi -f my-omakase/omasushi.yaml export` → push → `omasushi publish` (registers on omasushi-web through its API; rate-limited to 10/hour per IP, and it fails with "not found" until `omasushi.yaml` is on the public repo's main/master)
 5. **Build on other people's omakases** → put them under `use:` in your own `omasushi.yaml` (your entries win on conflicts) → `omasushi use --mine you/my-setup` → `export` now writes to yours by default and never records what a `use:`d omakase already declares. One repo carries the whole combination for the next machine
+6. **Want one package/dotfile/skill out of someone's big omakase, not the whole thing** → use the long `use:` form with `only:` → `list`/`status` show `only <paths>` for what was taken
 
 When the user says "sync", **show `diff` first, then run `sync`** — sync runs yay and
 git clone, so do not run it without the user seeing the diff.
@@ -75,6 +76,13 @@ description: short blurb shown by tools
 use:                             # other omakases this one builds on: loaded underneath it,
   - polidog/omakase/kitty        # so this file wins on conflicts. owner/repo[/part], URL,
   - someone/nvim-setup           # or path (relative = sibling of this repo). Not in config.yaml
+  - source: someone/big          # long form: take only the items only: names, and nothing
+    only:                        # else from it — their own use: chain included
+      packages.aur: [kitty]      # keys are paths into their manifest: packages.pacman|aur,
+      files: [files/kitty.conf]  # omarchy.font|defaults.<kind>|plugins, herdr.plugins, files,
+      agent.skills: [review]     # {agent,claude}.{skills,commands}. A list under a leaf names
+                                 # its entries, under a section its sub-keys (packages: [aur]);
+                                 # no list takes the path whole. An unknown path is an error
 packages:
   pacman: [pkg]                  # official repos; written by hand
   aur: [pkg]                     # filled by export (pacman -Qqm)

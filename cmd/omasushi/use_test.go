@@ -158,3 +158,187 @@ func names(rs []Omakase) []string {
 	}
 	return out
 }
+
+// A use: entry with only: takes just the items it names, and nothing else
+// from that omakase.
+func TestUseOnlyTakesNamedItems(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "big", ManifestFile), `
+packages:
+  aur: [kitty, ghostty]
+  pacman: [tmux]
+omarchy:
+  font: Their Font
+files:
+  files/kitty.conf: ~/.config/kitty/kitty.conf
+  files/nvim.lua: ~/.config/nvim/init.lua
+`)
+	writeFile(t, filepath.Join(root, "mine", ManifestFile), `
+use:
+  - source: ../big
+    only:
+      packages.aur: [kitty]
+      files: [files/kitty.conf]
+packages:
+  aur: [my-tool]
+`)
+	out := resolve(t, filepath.Join(root, "mine", ManifestFile))
+	if len(out) != 2 || out[0].Name != "big" {
+		t.Fatalf("got %v", names(out))
+	}
+	o := out[0].Resolve("h")
+	if got := o.Packages.Aur; len(got) != 1 || got[0] != "kitty" {
+		t.Errorf("packages.aur: got %v, want [kitty]", got)
+	}
+	if len(o.Packages.Pacman) != 0 {
+		t.Errorf("packages.pacman was not selected: got %v", o.Packages.Pacman)
+	}
+	if o.Omarchy.Font != "" {
+		t.Errorf("omarchy.font was not selected: got %q", o.Omarchy.Font)
+	}
+	if len(o.Files) != 1 || o.Files["files/kitty.conf"] == "" {
+		t.Errorf("files: got %v", o.Files)
+	}
+	if out[1].Resolve("h").Packages.Aur[0] != "my-tool" {
+		t.Errorf("the declaring omakase is untouched: got %v", out[1].Resolve("h"))
+	}
+}
+
+// only: addresses the manifest by dotted path: a leaf's list names its own
+// entries, a section's list names the sub-keys to descend into, and the most
+// specific path that matches decides.
+func TestSelectionPaths(t *testing.T) {
+	sel := Selection{"packages": {"aur"}, "omarchy.defaults": {"agent"}, "herdr.plugins": nil}
+	for _, c := range []struct {
+		path, item string
+		want       bool
+	}{
+		{"packages.aur", "kitty", true},
+		{"packages.pacman", "tmux", false},
+		{"omarchy.defaults.agent", "", true},
+		{"omarchy.defaults.editor", "", false},
+		{"omarchy.font", "", false},
+		{"herdr.plugins", "anything", true},
+		{"files", "files/x", false},
+	} {
+		if got := sel.keeps(c.path, c.item); got != c.want {
+			t.Errorf("keeps(%q, %q) = %v, want %v", c.path, c.item, got, c.want)
+		}
+	}
+	if err := (Selection{"packages.typo": nil}).check(); err == nil {
+		t.Error("an unknown only: path must be rejected")
+	}
+	if err := (Selection{"omarchy": nil}).check(); err != nil {
+		t.Errorf("a section path is a valid only: key: %v", err)
+	}
+}
+
+// An only: governs the whole chain it pulls in, so cherry-picking one package
+// never drags the used omakase's own dependencies in behind it.
+func TestUseOnlyNarrowsTheWholeChain(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "deep", ManifestFile), "packages:\n  aur: [kitty, junk]\n")
+	writeFile(t, filepath.Join(root, "big", ManifestFile), "use: [../deep]\npackages:\n  aur: [other]\n")
+	writeFile(t, filepath.Join(root, "mine", ManifestFile), `
+use:
+  - source: ../big
+    only:
+      packages.aur: [kitty]
+`)
+	out := resolve(t, filepath.Join(root, "mine", ManifestFile))
+	var got []string
+	for _, r := range out {
+		got = append(got, r.Resolve("h").Packages.Aur...)
+	}
+	if len(got) != 1 || got[0] != "kitty" {
+		t.Errorf("only kitty crosses over: got %v from %v", got, names(out))
+	}
+}
+
+// A part a filtered use: takes nothing from drops out instead of sitting in
+// list doing nothing.
+func TestUseOnlyDropsEmptyParts(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "split", ManifestFile), "parts: [kitty, nvim]\n")
+	writeFile(t, filepath.Join(root, "split", "kitty", ManifestFile), "packages:\n  aur: [kitty]\n")
+	writeFile(t, filepath.Join(root, "split", "nvim", ManifestFile), "packages:\n  aur: [neovim]\n")
+	writeFile(t, filepath.Join(root, "mine", ManifestFile), `
+use:
+  - source: ../split
+    only:
+      packages.aur: [kitty]
+`)
+	out := resolve(t, filepath.Join(root, "mine", ManifestFile))
+	if len(out) != 2 || out[0].Name != "split/kitty" || out[1].Name != "mine" {
+		t.Fatalf("got %v", names(out))
+	}
+}
+
+// Reaching the same omakase twice widens what is taken from it rather than
+// dropping the second use.
+func TestUseOnlyWidensOnSecondUse(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "big", ManifestFile), "packages:\n  aur: [a, b, c]\n")
+	writeFile(t, filepath.Join(root, "one", ManifestFile), "use:\n  - source: ../big\n    only: {packages.aur: [a]}\n")
+	writeFile(t, filepath.Join(root, "two", ManifestFile), "use:\n  - source: ../big\n    only: {packages.aur: [b]}\n")
+
+	one, err := omakaseFromDir(filepath.Join(root, "one", ManifestFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := omakaseFromDir(filepath.Join(root, "two", ManifestFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := resolveUses(append(one, two...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := out[0].Resolve("h").Packages.Aur; len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("both selections apply: got %v", got)
+	}
+}
+
+// A bare use: entry round-trips as a bare string, so export never rewrites a
+// hand-written manifest into the long form.
+func TestUseRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ManifestFile)
+	writeFile(t, path, "use:\n  - polidog/omakase\n  - source: someone/big\n    only: {files: [files/x]}\n")
+	m, err := LoadManifest(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Use) != 2 || m.Use[0].Source != "polidog/omakase" || m.Use[0].Only != nil {
+		t.Fatalf("parse: got %+v", m.Use)
+	}
+	if got := m.Use[1].Only["files"]; len(got) != 1 || got[0] != "files/x" {
+		t.Fatalf("only: got %+v", m.Use[1])
+	}
+	if err := m.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	again, err := LoadManifest(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Use) != 2 || again.Use[0].Source != "polidog/omakase" || again.Use[0].Only != nil {
+		t.Errorf("round trip: got %+v", again.Use)
+	}
+	if got := again.Use[1].Only["files"]; len(got) != 1 || got[0] != "files/x" {
+		t.Errorf("round trip only: got %+v", again.Use[1])
+	}
+}
+
+func resolve(t *testing.T, manifestPath string) []Omakase {
+	t.Helper()
+	rs, err := omakaseFromDir(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := resolveUses(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}

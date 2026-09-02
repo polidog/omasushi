@@ -176,6 +176,9 @@ func main() {
 			if r.Via != "" {
 				note += "  (via " + r.Via + ")"
 			}
+			if paths := r.Only.paths(); len(paths) > 0 {
+				note += "  (only " + strings.Join(paths, ", ") + ")"
+			}
 			fmt.Printf("%-28s %-6s %-44s %s%s\n", r.Name, kind, r.Source, tildify(r.Dir), note)
 		}
 	case "mine":
@@ -394,7 +397,7 @@ func export(omakases []Omakase, target *Omakase, have *State, host, toHost strin
 		if toHost != "" {
 			h = toHost
 		}
-		resolved = resolved.merge(r.Manifest.Resolve(h))
+		resolved = resolved.merge(r.Resolve(h))
 	}
 	m := target.Manifest
 	var t *Overlay

@@ -19,7 +19,7 @@ func Unlink(omakases []Omakase, host string, dryRun bool) (undone []string, err 
 	var links []link
 	agent := resolveAgent(omakases, host)
 	for _, r := range omakases {
-		links = append(links, omakaseLinks(r, r.Manifest.Resolve(host), agent)...)
+		links = append(links, omakaseLinks(r, r.Resolve(host), agent)...)
 	}
 	herdrDir := filepath.Join(expandHome("~"), ".config/herdr") + string(filepath.Separator)
 	hyprDir := filepath.Join(expandHome("~"), ".config/hypr") + string(filepath.Separator)
