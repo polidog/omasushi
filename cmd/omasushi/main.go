@@ -36,12 +36,12 @@ func usage() {
 usage: omasushi [-f omasushi.yaml] [-H host] <command> [args]
 
 omakases:
-  use [--mine] <owner/repo[/part]|url|path>
-                              add an omakase (clone it, or point at a local dir);
-                              owner/repo takes every part of a split repository,
-                              owner/repo/herdr just that one. --mine marks it as
-                              your own: the omakase export writes to by default
-  mine [<name>|none]          show or set your own omakase
+  use [--recipe] <owner/repo[/part]|url|path>
+                              add an omakase to this machine's use: list (clone
+                              it, or point at a local dir); owner/repo takes
+                              every part of a split repository, owner/repo/herdr
+                              just that one. --recipe puts it in recipe: instead
+  recipe [<path>|none]        show or set the omakase this machine publishes
   list                        show omakases in use (name, source, checkout;
                               "via X" = pulled in by X's use: declaration)
   update                      git pull every remote omakase
@@ -63,8 +63,9 @@ machine:
                               (plan/apply/clean still work as aliases)
   export [--to <omakase>] [--host <name>]
                               record this machine's installed packages/plugins
-                              into an omakase: your own (mine) when set, else
-                              --to picks one (--host writes under hosts.<name>)
+                              into an omakase: the recipe when set, else this
+                              machine. --to machine|recipe|<name> picks another
+                              (--host writes under hosts.<name>)
   skill install|update|remove|list [--agent <name>]
                               put the bundled omasushi skill into the default
                               agent's global skills (~/.claude/skills,
@@ -72,8 +73,13 @@ machine:
                               update rewrites it after a newer go install
   version
 
--f path      use a single manifest instead of the configured omakases
-             (defaults to ./omasushi.yaml when no omakase is configured)
+this machine's own omakase is ~/.config/omasushi/omasushi.yaml: an ordinary
+manifest (packages, files, hosts) whose use: names what it takes from other
+people and whose recipe: names the omakase it publishes. It never leaves the
+machine; publish only ever offers the recipe.
+
+-f path      use a single manifest instead of this machine's own
+             (defaults to ./omasushi.yaml when that one is empty)
 -H host      resolve hosts.<host> overlays as if running on that machine`)
 	os.Exit(2)
 }
@@ -91,7 +97,7 @@ func main() {
 	}
 	cmd, args := flag.Arg(0), flag.Args()[1:]
 
-	cfg, err := LoadConfig()
+	machine, err := LoadMachine()
 	die(err)
 
 	switch cmd {
@@ -107,12 +113,12 @@ func main() {
 		return
 	case "use":
 		fs := flag.NewFlagSet("use", flag.ExitOnError)
-		mine := fs.Bool("mine", false, "mark it as your own omakase (export's default target)")
+		recipe := fs.Bool("recipe", false, "the omakase this machine publishes, not one it takes from")
 		fs.Parse(args)
 		if fs.NArg() != 1 {
 			usage()
 		}
-		rs, err := cfg.Use(fs.Arg(0))
+		rs, err := machine.Add(fs.Arg(0), *recipe)
 		die(err)
 		for _, r := range rs {
 			fmt.Printf("using %s from %s (%s)\n", r.Name, r.Source, tildify(r.Dir))
@@ -124,20 +130,20 @@ func main() {
 				fmt.Printf("using %s (via %s) (%s)\n", r.Name, r.Via, tildify(r.Dir))
 			}
 		}
-		if *mine {
-			if len(rs) != 1 {
-				die(fmt.Errorf("%s is split into %d parts; pick your own with `omasushi mine <name>`", fs.Arg(0), len(rs)))
+		if *recipe {
+			fmt.Printf("recipe: %s — export writes here, and publish offers this one\n", machine.Recipe)
+			if len(rs) > 0 && !rs[0].Local {
+				fmt.Fprintf(os.Stderr, "note: it is a managed checkout under %s — for a recipe you edit and push, clone it yourself and `omasushi recipe <dir>`\n",
+					tildify(omakasesDir()))
 			}
-			cfg.Mine = rs[0].Name
-			die(cfg.Save())
-			fmt.Printf("mine: %s — export writes here by default\n", cfg.Mine)
 		}
+		fmt.Printf("wrote %s\n", tildify(machinePath()))
 		return
 	case "remove":
 		if len(args) != 1 {
 			usage()
 		}
-		omakases, err := LoadOmakases(cfg)
+		omakases, err := activeOmakases(machine, "")
 		die(err)
 		for _, r := range omakases {
 			if r.Name == args[0] {
@@ -145,18 +151,45 @@ func main() {
 				die(err)
 			}
 		}
-		die(cfg.Remove(args[0]))
+		die(machine.Remove(args[0]))
 		fmt.Println("removed", args[0])
 		return
+	case "recipe", "mine": // mine is the pre-recipe: name
+		if cmd == "mine" {
+			fmt.Fprintln(os.Stderr, "note: `mine` is now `recipe` — the omakase this machine publishes")
+		}
+		if len(args) == 0 {
+			if machine.Recipe == "" {
+				fmt.Println("not set — omasushi recipe <path>, or omasushi use --recipe <repo>")
+			} else {
+				fmt.Println(machine.Recipe)
+			}
+			return
+		}
+		if args[0] == "none" {
+			machine.Recipe = ""
+			die(machine.Save())
+			fmt.Println("recipe: unset")
+			return
+		}
+		src, err := parseSource(args[0])
+		die(err)
+		if _, err := os.Stat(filepath.Join(checkoutDir(src), ManifestFile)); err != nil {
+			die(fmt.Errorf("%s has no %s (run `omasushi use --recipe %s` to clone it first)", args[0], ManifestFile, args[0]))
+		}
+		machine.Recipe = omakaseName(src.Repo, src.Part)
+		die(machine.Save())
+		fmt.Printf("recipe: %s — export writes here, and publish offers this one\n", machine.Recipe)
+		return
 	case "publish":
-		die(publishCmd(cfg, *file, args))
+		die(publishCmd(machine, *file, args))
 		return
 	case "skill":
 		die(skillCmd(args))
 		return
 	}
 
-	omakases, err := activeOmakases(cfg, *file)
+	omakases, err := activeOmakases(machine, *file)
 	die(err)
 
 	switch cmd {
@@ -170,8 +203,11 @@ func main() {
 				kind = "local"
 			}
 			var note string
-			if r.Name == cfg.Mine {
-				note = "  (mine)"
+			switch {
+			case r.Name == MachineName:
+				note = "  (this machine)"
+			case r.Repo == machine.recipeRepo():
+				note = "  (recipe)"
 			}
 			if r.Via != "" {
 				note += "  (via " + r.Via + ")"
@@ -181,26 +217,6 @@ func main() {
 			}
 			fmt.Printf("%-28s %-6s %-44s %s%s\n", r.Name, kind, r.Source, tildify(r.Dir), note)
 		}
-	case "mine":
-		if len(args) == 0 {
-			if cfg.Mine == "" {
-				fmt.Println("not set — omasushi mine <name>, or omasushi use --mine <repo>")
-			} else {
-				fmt.Println(cfg.Mine)
-			}
-			return
-		}
-		if args[0] == "none" {
-			cfg.Mine = ""
-			die(cfg.Save())
-			fmt.Println("mine: unset")
-			return
-		}
-		t, err := pickOmakase(omakases, args[0])
-		die(err)
-		cfg.Mine = t.Name
-		die(cfg.Save())
-		fmt.Printf("mine: %s — export writes here by default\n", cfg.Mine)
 	case "update":
 		die(Update(omakases))
 		die(updateInstalledSkills())
@@ -210,7 +226,7 @@ func main() {
 		fs.Parse(args)
 		have, err := Probe()
 		die(err)
-		st := gatherStatus(omakases, *host, have, cfg.Mine)
+		st := gatherStatus(omakases, *host, have, machine.recipeRepo())
 		if *asJSON {
 			printStatusJSON(st)
 		} else {
@@ -257,12 +273,12 @@ func main() {
 	case "export":
 		fs := flag.NewFlagSet("export", flag.ExitOnError)
 		toHost := fs.String("host", "", "write into hosts.<name> overlay")
-		to := fs.String("to", "", "omakase to write into (default: mine, else required when several are in use)")
+		to := fs.String("to", "", "where to write: machine, recipe, or an omakase name (default: recipe, else machine)")
 		fs.Parse(args)
-		target, err := exportTarget(omakases, *to, cfg.Mine)
+		target, err := exportTarget(omakases, *to, machine)
 		die(err)
-		if !target.Local && target.Name != cfg.Mine {
-			fmt.Fprintf(os.Stderr, "note: %s is a managed checkout under %s — commit & push there yourself, or keep your own omakase (`omasushi mine`)\n",
+		if !target.Local {
+			fmt.Fprintf(os.Stderr, "note: %s is a managed checkout under %s — commit & push there yourself, or point recipe: at a clone of your own\n",
 				target.Name, tildify(omakasesDir()))
 		}
 		have, err := Probe()
@@ -273,7 +289,7 @@ func main() {
 			return
 		}
 		die(target.Save())
-		fmt.Printf("wrote %s\n", target.ManifestPath())
+		fmt.Printf("wrote %s\n", tildify(target.ManifestPath()))
 		for _, a := range added {
 			fmt.Println("+", a)
 		}
@@ -282,21 +298,23 @@ func main() {
 	}
 }
 
-// activeOmakases picks the omakase set: -f wins; otherwise the config; and
-// when nothing is configured, an omasushi.yaml in the working directory.
-// use: declarations are expanded, so dependencies take part in every command.
-func activeOmakases(cfg *Config, file string) ([]Omakase, error) {
+// activeOmakases picks the omakase set: -f wins; otherwise this machine's own
+// omakase, whose use: chain (the recipe last, so it wins) is expanded into the
+// layers underneath it. A machine that declares nothing at all falls back to an
+// omasushi.yaml in the working directory, so a checkout can be driven in place.
+func activeOmakases(machine *Machine, file string) ([]Omakase, error) {
 	var rs []Omakase
 	var err error
 	switch {
 	case file != "":
 		rs, err = omakaseFromDir(file)
-	case len(cfg.Omakases) > 0:
-		rs, err = LoadOmakases(cfg)
-	default:
-		if _, statErr := os.Stat(ManifestFile); statErr == nil {
-			rs, err = omakaseFromDir(ManifestFile)
+	case machine.blank():
+		if _, statErr := os.Stat(ManifestFile); statErr != nil {
+			return nil, nil
 		}
+		rs, err = omakaseFromDir(ManifestFile)
+	default:
+		rs = []Omakase{machine.Omakase()}
 	}
 	if err != nil || rs == nil {
 		return rs, err
@@ -304,18 +322,43 @@ func activeOmakases(cfg *Config, file string) ([]Omakase, error) {
 	return resolveUses(rs)
 }
 
-// exportTarget picks where export writes: --to when given, else the user's
-// own omakase (mine) when it is among the active ones.
-func exportTarget(omakases []Omakase, to, mine string) (*Omakase, error) {
-	if to == "" {
-		for _, r := range omakases {
-			if r.Name == mine {
-				to = mine
-				break
+// exportTarget picks where export writes: --to when given (machine, recipe, or
+// an omakase name), else the recipe, else this machine — the one place that is
+// always there to record into.
+func exportTarget(omakases []Omakase, to string, machine *Machine) (*Omakase, error) {
+	switch to {
+	case "recipe", "":
+		rs := omakasesInRepo(omakases, machine.recipeRepo())
+		switch {
+		case len(rs) == 1:
+			return rs[0], nil
+		case len(rs) > 1:
+			var names []string
+			for _, r := range rs {
+				names = append(names, r.Name)
 			}
+			return nil, fmt.Errorf("the recipe is split into %d parts; pick one with --to (%s), or --to machine", len(rs), strings.Join(names, ", "))
+		case to == "recipe":
+			return nil, fmt.Errorf("no recipe set; `omasushi recipe <path>` names the omakase this machine publishes")
 		}
+		to = MachineName
 	}
 	return pickOmakase(omakases, to)
+}
+
+// omakasesInRepo picks the omakases that live in one checkout — several when
+// it is split into parts.
+func omakasesInRepo(omakases []Omakase, repo string) []*Omakase {
+	var out []*Omakase
+	if repo == "" {
+		return nil
+	}
+	for i := range omakases {
+		if omakases[i].Repo == repo {
+			out = append(out, &omakases[i])
+		}
+	}
+	return out
 }
 
 func pickOmakase(omakases []Omakase, name string) (*Omakase, error) {
@@ -329,7 +372,7 @@ func pickOmakase(omakases []Omakase, name string) (*Omakase, error) {
 		for _, r := range omakases {
 			names = append(names, r.Name)
 		}
-		return nil, fmt.Errorf("several omakases in use (%s); pick one with --to, or mark yours once with `omasushi mine <name>`", strings.Join(names, ", "))
+		return nil, fmt.Errorf("several omakases in use (%s); pick one with --to, or name your own once with `omasushi recipe <path>`", strings.Join(names, ", "))
 	}
 	for i := range omakases {
 		if omakases[i].Name == name {
@@ -533,7 +576,7 @@ hosts: {}             # <hostname>: { packages: ..., files: ... } overlays
 		return err
 	}
 	fmt.Printf("created %s\n", mp)
-	fmt.Println("next: omasushi -f", mp, "export   # record what this machine has")
+	fmt.Printf("next: omasushi recipe %s   # then `omasushi export` records this machine into it\n", dir)
 	return nil
 }
 
