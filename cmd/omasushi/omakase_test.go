@@ -90,31 +90,22 @@ func TestPartsExpandAndConfig(t *testing.T) {
 		t.Errorf("manifests not loaded per part: %+v %+v", rs[0].Manifest, rs[1].Manifest)
 	}
 
-	// use with a local path records one entry per part; use path/part just one
+	// use records the repository as the user typed it, and loading the machine
+	// manifest expands it into its parts
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	cfg := &Config{}
-	if _, err := cfg.Use(repo); err != nil {
+	machine := &Machine{}
+	if _, err := machine.Add(repo, false); err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Omakases) != 2 || cfg.Omakases[1].Part != "kitty" || cfg.Omakases[1].Source != repo {
-		t.Fatalf("config after use: %+v", cfg.Omakases)
+	if len(machine.Use) != 1 || machine.Use[0].Source != repo {
+		t.Fatalf("machine manifest after use: %+v", machine.Use)
 	}
-	loaded, err := LoadOmakases(cfg)
-	if err != nil || len(loaded) != 2 || loaded[1].Dir != filepath.Join(repo, "kitty") {
-		t.Fatalf("LoadOmakases: %v %+v", err, loaded)
+	loaded, err := activeOmakases(machine, "")
+	if err != nil || len(loaded) != 3 || loaded[1].Dir != filepath.Join(repo, "kitty") {
+		t.Fatalf("activeOmakases: %v %+v", err, names(loaded))
 	}
-	if err := cfg.Remove(base + "/herdr"); err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Omakases) != 1 || cfg.Omakases[0].Part != "kitty" {
-		t.Fatalf("config after remove: %+v", cfg.Omakases)
-	}
-
-	// a pre-split entry (no part) for a repo that now has parts expands on load
-	legacy := &Config{Omakases: []OmakaseRef{{Name: base, Source: repo}}}
-	loaded, err = LoadOmakases(legacy)
-	if err != nil || len(loaded) != 2 {
-		t.Fatalf("legacy expand: %v %+v", err, loaded)
+	if loaded[2].Name != MachineName {
+		t.Errorf("the machine is the top layer, got %v", names(loaded))
 	}
 
 	// a plain repository without parts still loads as one omakase

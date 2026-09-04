@@ -23,7 +23,7 @@ var submitRepo = "polidog/omasushi"
 // omasushi.yaml and puts the plate on the belt. The CLI does the local
 // half — find the repository URL, make sure omasushi.yaml is there and
 // pushed — then opens the submit issue form prefilled.
-func publishCmd(cfg *Config, file string, args []string) error {
+func publishCmd(machine *Machine, file string, args []string) error {
 	fs := flag.NewFlagSet("publish", flag.ExitOnError)
 	submit := fs.String("submit-repo", envOr("OMASUSHI_SUBMIT_REPO", submitRepo), "GitHub owner/repo whose issue form takes submissions")
 	dry := fs.Bool("dry-run", false, "resolve and print the submission URL, open nothing")
@@ -45,7 +45,7 @@ on the issue once it is on the belt.`)
 		os.Exit(2)
 	}
 
-	repo, dir, err := publishTarget(cfg, file, fs.Arg(0))
+	repo, dir, err := publishTarget(machine, file, fs.Arg(0))
 	if err != nil {
 		return err
 	}
@@ -87,33 +87,30 @@ func submitIssueURL(submitRepo, repo string) (string, error) {
 }
 
 // publishTarget resolves what to publish into a canonical repository URL and,
-// when it comes from a local checkout, that checkout's directory.
-func publishTarget(cfg *Config, file, arg string) (repo, dir string, err error) {
+// when it comes from a local checkout, that checkout's directory. With no
+// argument it is the checkout you are standing in, else this machine's recipe
+// — the one layer meant to be shared.
+func publishTarget(machine *Machine, file, arg string) (repo, dir string, err error) {
 	switch {
 	case arg == "" && file != "":
 		dir = filepath.Dir(file)
 	case arg == "":
 		if _, statErr := os.Stat(ManifestFile); statErr == nil {
-			dir = "."
+			dir = "." // standing in a checkout: publish the one you are in
 			break
 		}
-		omakases, err := activeOmakases(cfg, "")
+		if r := machine.recipeRepo(); r != "" {
+			return publishDir(r)
+		}
+		return "", "", fmt.Errorf("nothing to publish: no %s here, and no recipe set (`omasushi recipe <path>` names the omakase this machine publishes)", ManifestFile)
+	default:
+		omakases, err := activeOmakases(machine, "")
 		if err != nil {
 			return "", "", err
 		}
-		r, err := pickOmakase(omakases, "")
-		if err != nil {
-			return "", "", fmt.Errorf("%w (or run publish inside an omakase checkout)", err)
-		}
-		return publishOmakase(*r)
-	default:
-		for _, ref := range cfg.Omakases {
-			if ref.Name == arg {
-				rs, err := LoadOmakases(&Config{Omakases: []OmakaseRef{ref}})
-				if err != nil {
-					return "", "", err
-				}
-				return publishOmakase(rs[0])
+		for _, r := range omakases {
+			if r.Name == arg {
+				return publishOmakase(r)
 			}
 		}
 		_, target, local, err := resolveSource(arg)
@@ -127,9 +124,19 @@ func publishTarget(cfg *Config, file, arg string) (repo, dir string, err error) 
 		dir = target
 	}
 
-	abs, err := filepath.Abs(dir)
+	return publishDir(dir)
+}
+
+// publishDir is the local half of publishing: the checkout's origin, plus the
+// checks that it is an omakase at all. This machine's own manifest is not one
+// — it is the layer that never leaves the machine.
+func publishDir(dir string) (repo, abs string, err error) {
+	abs, err = filepath.Abs(dir)
 	if err != nil {
 		return "", "", err
+	}
+	if abs == machineDir() {
+		return "", "", fmt.Errorf("%s is this machine's own omakase, not a recipe — publish the one under recipe:", tildify(abs))
 	}
 	if _, err := os.Stat(filepath.Join(abs, ManifestFile)); err != nil {
 		return "", "", fmt.Errorf("%s has no %s", abs, ManifestFile)

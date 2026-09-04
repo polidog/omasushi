@@ -28,10 +28,10 @@ type OmakaseStatus struct {
 	Source   string   `json:"source"`
 	Dir      string   `json:"dir"`
 	Local    bool     `json:"local"`
-	Mine     bool     `json:"mine,omitempty"` // the user's own omakase (export's default target)
-	Via      string   `json:"via,omitempty"`  // pulled in by this omakase's use: declaration
-	Only     []string `json:"only,omitempty"` // manifest paths a filtered use: takes from it
-	HasHost  bool     `json:"hasHostOverlay"` // declares hosts.<host>
+	Recipe   bool     `json:"recipe,omitempty"` // part of the omakase this machine publishes
+	Via      string   `json:"via,omitempty"`    // pulled in by this omakase's use: declaration
+	Only     []string `json:"only,omitempty"`   // manifest paths a filtered use: takes from it
+	HasHost  bool     `json:"hasHostOverlay"`   // declares hosts.<host>
 	Branch   string   `json:"branch,omitempty"`
 	Commit   string   `json:"commit,omitempty"`
 	Modified int      `json:"modified"` // uncommitted changes (git status --porcelain)
@@ -55,10 +55,12 @@ type SyncStatus struct {
 	Linked      int            `json:"linked"`      // ...of which are already in place
 }
 
-func gatherStatus(omakases []Omakase, host string, have *State, mine string) Status {
-	st := Status{Host: host, Config: configPath(), Omakases: []OmakaseStatus{}}
+// gatherStatus reports on the omakases in use; recipeRepo names the checkout
+// this machine publishes, so its omakases can be marked as the user's own.
+func gatherStatus(omakases []Omakase, host string, have *State, recipeRepo string) Status {
+	st := Status{Host: host, Config: machinePath(), Omakases: []OmakaseStatus{}}
 	for _, r := range omakases {
-		o := OmakaseStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local, Mine: mine != "" && r.Name == mine, Via: r.Via, Only: r.Only.paths()}
+		o := OmakaseStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local, Recipe: recipeRepo != "" && r.Repo == recipeRepo, Via: r.Via, Only: r.Only.paths()}
 		if r.Manifest != nil {
 			_, o.HasHost = r.Manifest.Hosts[host]
 		}
@@ -108,7 +110,7 @@ func isGitRepo(dir string) bool {
 
 func printStatus(st Status) {
 	fmt.Printf("host      %s\n", st.Host)
-	fmt.Printf("config    %s\n", tildify(st.Config))
+	fmt.Printf("manifest  %s\n", tildify(st.Config))
 
 	fmt.Println("\nomakases")
 	if len(st.Omakases) == 0 {
@@ -124,8 +126,11 @@ func printStatus(st Status) {
 			rev = o.Branch + "@" + o.Commit
 		}
 		var notes []string
-		if o.Mine {
-			notes = append(notes, "mine")
+		if o.Name == MachineName {
+			notes = append(notes, "this machine")
+		}
+		if o.Recipe {
+			notes = append(notes, "recipe")
 		}
 		if o.Via != "" {
 			notes = append(notes, "via "+o.Via)

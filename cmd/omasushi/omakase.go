@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -27,6 +28,7 @@ type Omakase struct {
 	Only     Selection // set when a filtered use: reached it: take just these items (nil = all of it)
 	Manifest *Manifest
 	Root     *Manifest // set for a part written inline: the manifest that declares it
+	Machine  *Machine  // set for the machine omakase: Save writes the whole file, recipe: included
 }
 
 // Resolve is this omakase's desired state for host: its manifest with the
@@ -40,32 +42,45 @@ func (r Omakase) ManifestPath() string { return filepath.Join(r.Dir, ManifestFil
 // Save writes the omakase's manifest back to disk. An inline part is stored in
 // its repository's root manifest, so that whole manifest is what gets written.
 func (r Omakase) Save() error {
-	if r.Root != nil {
+	switch {
+	case r.Machine != nil:
+		return r.Machine.Save()
+	case r.Root != nil:
 		return r.Root.Save(r.ManifestPath())
 	}
 	return r.Manifest.Save(r.ManifestPath())
 }
 
-// Config is ~/.config/omasushi/config.yaml: the ordered list of omakases in
-// use, plus which of them is the user's own — the one export writes to by
-// default, as opposed to other people's omakases stacked underneath.
-type Config struct {
-	Omakases []OmakaseRef `yaml:"omakases"`
-	Mine     string       `yaml:"mine,omitempty"` // Name of the user's own omakase
+// MachineName is what the machine manifest is called wherever omakases are
+// named: diff's "<- machine", list, and export --to.
+const MachineName = "machine"
+
+// A Machine is this machine's own omakase, ~/.config/omasushi/omasushi.yaml.
+// It is an ordinary manifest — packages, files, hosts, and a use: list of the
+// omakases this machine takes from other people — with one key of its own:
+// recipe:, the omakase this machine publishes.
+//
+// That makes three layers of the same format in three places: the omakases
+// under use: at the bottom, the recipe over them, and this file over both.
+// Only this one never leaves the machine, so whatever is particular to it —
+// or simply not for sharing — stays out of the recipe by living here, and
+// `publish` only ever has the recipe to offer.
+type Machine struct {
+	Recipe   string `yaml:"recipe,omitempty"`
+	Manifest `yaml:",inline"`
 }
 
-type OmakaseRef struct {
-	Name   string `yaml:"name"`
-	Source string `yaml:"source"`
-	Part   string `yaml:"part,omitempty"`
-}
-
-func configPath() string {
+func machineDir() string {
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
-		return filepath.Join(d, "omasushi", "config.yaml")
+		return filepath.Join(d, "omasushi")
 	}
-	return expandHome("~/.config/omasushi/config.yaml")
+	return expandHome("~/.config/omasushi")
 }
+
+// machinePath is the machine manifest. It is an omasushi.yaml like any other:
+// the same file an omakase repository carries, in the one place that is this
+// machine's own.
+func machinePath() string { return filepath.Join(machineDir(), ManifestFile) }
 
 func omakasesDir() string {
 	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
@@ -74,31 +89,116 @@ func omakasesDir() string {
 	return expandHome("~/.local/share/omasushi/omakases")
 }
 
-func LoadConfig() (*Config, error) {
-	b, err := os.ReadFile(configPath())
+func LoadMachine() (*Machine, error) {
+	b, err := os.ReadFile(machinePath())
 	if os.IsNotExist(err) {
-		return &Config{}, nil
+		return migrateConfig()
 	}
 	if err != nil {
 		return nil, err
 	}
-	var c Config
-	if err := yaml.Unmarshal(b, &c); err != nil {
-		return nil, fmt.Errorf("%s: %w", configPath(), err)
+	var m Machine
+	if err := yaml.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("%s: %w", machinePath(), err)
 	}
-	return &c, nil
+	return &m, nil
 }
 
-func (c *Config) Save() error {
-	p := configPath()
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+func (m *Machine) Save() error {
+	if err := os.MkdirAll(machineDir(), 0o755); err != nil {
 		return err
 	}
-	b, err := yaml.Marshal(c)
+	var sb strings.Builder
+	enc := yaml.NewEncoder(&sb)
+	enc.SetIndent(2)
+	if err := enc.Encode(m); err != nil {
+		return err
+	}
+	return os.WriteFile(machinePath(), []byte(sb.String()), 0o644)
+}
+
+// blank reports whether the machine manifest says nothing at all, which is
+// when omasushi falls back to an omasushi.yaml in the working directory.
+func (m *Machine) blank() bool {
+	return m.Recipe == "" && len(m.Use) == 0 && m.Parts.Len() == 0 &&
+		len(m.Hosts) == 0 && m.Resolve("").empty()
+}
+
+// Omakase is the machine manifest as the top layer of the stack: an omakase
+// rooted at ~/.config/omasushi (so its files: paths live beside it), whose
+// use: chain is what this machine takes from other people plus — last, so it
+// wins over them — the recipe.
+func (m *Machine) Omakase() Omakase {
+	uses := append([]Use{}, m.Use...)
+	if m.Recipe != "" {
+		uses = append(uses, Use{Source: m.Recipe})
+	}
+	return Omakase{
+		Name: MachineName, Source: machineDir(), Repo: machineDir(), Dir: machineDir(),
+		Local: true, Uses: uses, Manifest: &m.Manifest, Machine: m,
+	}
+}
+
+// recipeRepo is the checkout the recipe: source names — a directory of the
+// user's own, or a managed clone — without cloning anything. "" when unset.
+func (m *Machine) recipeRepo() string {
+	if m.Recipe == "" {
+		return ""
+	}
+	src, err := parseSource(m.Recipe)
 	if err != nil {
-		return err
+		return ""
 	}
-	return os.WriteFile(p, b, 0o644)
+	return checkoutDir(src)
+}
+
+// checkoutDir is where a source lives on disk: its own directory for a local
+// one, the managed clone for a remote one (which may not exist yet).
+func checkoutDir(src source) string {
+	if src.Local {
+		return src.Target
+	}
+	return filepath.Join(omakasesDir(), src.Name)
+}
+
+// migrateConfig converts the pre-machine-manifest ~/.config/omasushi/config.yaml
+// — an omakases: list plus mine: — into the machine manifest, once. The old
+// file is left where it is, unread from then on.
+func migrateConfig() (*Machine, error) {
+	legacy := filepath.Join(machineDir(), "config.yaml")
+	b, err := os.ReadFile(legacy)
+	if os.IsNotExist(err) {
+		return &Machine{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var old struct {
+		Omakases []struct {
+			Name   string `yaml:"name"`
+			Source string `yaml:"source"`
+			Part   string `yaml:"part"`
+		} `yaml:"omakases"`
+		Mine string `yaml:"mine"`
+	}
+	if err := yaml.Unmarshal(b, &old); err != nil {
+		return nil, fmt.Errorf("%s: %w", legacy, err)
+	}
+	m := &Machine{}
+	for _, ref := range old.Omakases {
+		source := omakaseName(ref.Source, ref.Part)
+		if ref.Name == old.Mine || (old.Mine != "" && strings.HasPrefix(old.Mine, ref.Name+"/")) {
+			m.Recipe = ref.Source // the recipe is a repository; publish takes it whole
+			continue
+		}
+		m.use(source)
+	}
+	if err := m.Save(); err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(os.Stderr, "note: %s is now %s (omakases: -> use:, mine: -> recipe:); the old file is no longer read\n",
+		tildify(legacy), tildify(machinePath()))
+	return m, nil
 }
 
 // source is a parsed omakase source: the repository plus an optional part.
@@ -224,36 +324,6 @@ func omakaseName(repo, part string) string {
 	return repo + "/" + part
 }
 
-// LoadOmakases materialises the configured omakases. Missing checkouts are an
-// error (run `omasushi use` again); a missing manifest is an empty manifest.
-// A root entry whose repository has been split into parts (recorded before
-// the split) expands to all of its parts.
-func LoadOmakases(c *Config) ([]Omakase, error) {
-	var out []Omakase
-	for _, ref := range c.Omakases {
-		src, err := parseSource(ref.Source)
-		if err != nil {
-			return nil, err
-		}
-		if ref.Part != "" {
-			src.Part = ref.Part
-		}
-		repo := src.Target
-		if !src.Local {
-			repo = filepath.Join(omakasesDir(), src.Name)
-		}
-		if _, err := os.Stat(repo); err != nil {
-			return nil, fmt.Errorf("omakase %s: checkout missing at %s (run `omasushi use %s`)", ref.Name, repo, ref.Source)
-		}
-		rs, err := omakasesIn(src, repo, ref.Name)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, rs...)
-	}
-	return out, nil
-}
-
 // omakasesIn loads src.Part of the checkout at repo; for the root of a
 // repository that declares parts it loads every part instead. A part is either
 // a directory of its own or written inline in the root manifest, in which case
@@ -374,6 +444,12 @@ func resolveUses(rs []Omakase) ([]Omakase, error) {
 			}
 			r.Via, r.Only = via, only
 			at[r.Name] = &r
+			// The machine manifest is the root of the stack, not a middleman:
+			// what it uses is what the user asked for directly.
+			mine := r.Name
+			if mine == MachineName {
+				mine = ""
+			}
 			for _, u := range r.Uses {
 				deps, err := loadUse(u, r.Repo)
 				if err != nil {
@@ -385,7 +461,7 @@ func resolveUses(rs []Omakase) ([]Omakase, error) {
 				if sub == nil {
 					sub = u.Only
 				}
-				if err := add(deps, r.Name, sub); err != nil {
+				if err := add(deps, mine, sub); err != nil {
 					return err
 				}
 			}
@@ -446,11 +522,15 @@ func ensureCheckout(src source) (string, error) {
 	return repo, nil
 }
 
-// Use adds an omakase: clones remote sources into omakasesDir (one checkout
-// per repository, shared by its parts), records local paths as they are.
-// `owner/repo` on a repository split into parts adds every part; re-using an
-// existing name refreshes the checkout.
-func (c *Config) Use(input string) ([]Omakase, error) {
+// Add records an omakase under the machine manifest's use:, cloning a remote
+// source (or refreshing an existing checkout) first. What the user typed is
+// what gets written — `owner/repo` on a split repository records the
+// repository, so parts added to it later come along on their own — and the
+// omakases it resolves to are returned for the caller to report.
+//
+// Adding it as the recipe puts it in recipe: instead: that slot is the one
+// omakase this machine publishes and exports to, not one it merely uses.
+func (m *Machine) Add(input string, recipe bool) ([]Omakase, error) {
 	src, err := parseSource(input)
 	if err != nil {
 		return nil, err
@@ -474,56 +554,115 @@ func (c *Config) Use(input string) ([]Omakase, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, r := range rs {
-		c.add(OmakaseRef{Name: r.Name, Source: src.Repo, Part: r.Part})
+	source := omakaseName(src.Repo, src.Part)
+	if recipe {
+		m.Recipe = source
+	} else {
+		m.use(source)
 	}
-	return rs, c.Save()
+	return rs, m.Save()
 }
 
-func (c *Config) add(ref OmakaseRef) {
-	for i, have := range c.Omakases {
-		if have.Name == ref.Name {
-			c.Omakases[i] = ref
+// use appends a source to use: unless it is already there, keeping whatever
+// only: that entry carries.
+func (m *Machine) use(source string) {
+	for _, u := range m.Use {
+		if sameSource(u.Source, source) {
 			return
 		}
 	}
-	c.Omakases = append(c.Omakases, ref)
+	m.Use = append(m.Use, Use{Source: source})
 }
 
-// Remove forgets an omakase by name (repo or repo/part). The managed checkout
-// is deleted once no other part of the same repository is in use.
-func (c *Config) Remove(name string) error {
-	var removed *OmakaseRef
-	kept := c.Omakases[:0:0]
-	for _, ref := range c.Omakases {
-		if ref.Name == name && removed == nil {
-			r := ref
-			removed = &r
+// sameSource reports whether two use: entries name the same omakase, so that
+// polidog/omakase and https://github.com/polidog/omakase.git count as one.
+func sameSource(a, b string) bool {
+	sa, ea := parseSource(a)
+	sb, eb := parseSource(b)
+	if ea != nil || eb != nil {
+		return a == b
+	}
+	return sa.Target == sb.Target && sa.Part == sb.Part
+}
+
+// Remove drops an omakase from use:. A single part of a repository recorded
+// whole is dropped by replacing that entry with its siblings, so `remove
+// owner/repo/herdr` keeps working on a repository added as `owner/repo`. The
+// managed checkout goes once nothing points at that repository any more.
+func (m *Machine) Remove(name string) error {
+	for i, u := range m.Use {
+		src, err := parseSource(u.Source)
+		if err != nil || omakaseName(src.Name, src.Part) != name {
 			continue
 		}
-		kept = append(kept, ref)
+		m.Use = append(m.Use[:i:i], m.Use[i+1:]...)
+		m.dropCheckout(src)
+		return m.Save()
 	}
-	if removed == nil {
-		return fmt.Errorf("no omakase named %q", name)
-	}
-	c.Omakases = kept
-	if c.Mine == name {
-		c.Mine = ""
-	}
-	src, err := parseSource(removed.Source)
-	if err == nil && !src.Local && !c.usesRepo(src.Name) {
-		dir := filepath.Join(omakasesDir(), src.Name)
-		if strings.HasPrefix(dir, omakasesDir()) {
-			os.RemoveAll(dir)
-			os.Remove(filepath.Dir(dir)) // owner dir, only if now empty
+	for i, u := range m.Use {
+		src, err := parseSource(u.Source)
+		if err != nil || src.Part != "" || !strings.HasPrefix(name, src.Name+"/") {
+			continue
 		}
+		part := strings.TrimPrefix(name, src.Name+"/")
+		root, err := LoadManifest(filepath.Join(checkoutDir(src), ManifestFile))
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(root.Parts.Names, part) {
+			continue
+		}
+		if src.Local {
+			return fmt.Errorf("%s is one part of the local omakase %s; remove the whole path, or point use: at the parts you want", name, u.Source)
+		}
+		var kept []Use
+		for _, p := range root.Parts.Names {
+			if p != part {
+				kept = append(kept, Use{Source: omakaseName(u.Source, p), Only: u.Only})
+			}
+		}
+		m.Use = append(m.Use[:i:i], append(kept, m.Use[i+1:]...)...)
+		return m.Save()
 	}
-	return c.Save()
+	if m.recipeRepo() != "" && (name == m.Recipe || strings.HasPrefix(name+"/", recipeNamePrefix(m))) {
+		return fmt.Errorf("%s is this machine's recipe; drop it with `omasushi recipe none`", name)
+	}
+	return fmt.Errorf("no omakase named %q", name)
 }
 
-func (c *Config) usesRepo(repoName string) bool {
-	for _, ref := range c.Omakases {
-		if src, err := parseSource(ref.Source); err == nil && !src.Local && src.Name == repoName {
+// recipeNamePrefix is the recipe's omakase name with a trailing slash, for
+// spotting one of its parts.
+func recipeNamePrefix(m *Machine) string {
+	src, err := parseSource(m.Recipe)
+	if err != nil {
+		return "\x00"
+	}
+	return omakaseName(src.Name, src.Part) + "/"
+}
+
+// dropCheckout deletes a managed clone once no use: entry and no recipe still
+// points at that repository.
+func (m *Machine) dropCheckout(src source) {
+	if src.Local || m.usesRepo(src.Name) {
+		return
+	}
+	dir := filepath.Join(omakasesDir(), src.Name)
+	if strings.HasPrefix(dir, omakasesDir()) {
+		os.RemoveAll(dir)
+		os.Remove(filepath.Dir(dir)) // owner dir, only if now empty
+	}
+}
+
+func (m *Machine) usesRepo(repoName string) bool {
+	sources := make([]string, 0, len(m.Use)+1)
+	for _, u := range m.Use {
+		sources = append(sources, u.Source)
+	}
+	if m.Recipe != "" {
+		sources = append(sources, m.Recipe)
+	}
+	for _, s := range sources {
+		if src, err := parseSource(s); err == nil && !src.Local && src.Name == repoName {
 			return true
 		}
 	}

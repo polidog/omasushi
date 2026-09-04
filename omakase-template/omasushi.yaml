@@ -1,7 +1,12 @@
 # omasushi omakase — https://github.com/polidog/omasushi
 #
-# Copy this directory, run `omasushi -f omasushi.yaml export` on a machine you
-# like, add your dotfiles under files/ and Claude skills under skills/, push.
+# This is a recipe: the part of a setup you publish. Point a machine at it with
+# `omasushi recipe <this directory>`, run `omasushi export` there, add your
+# dotfiles under files/ and Claude skills under skills/, push.
+#
+# What belongs to one machine rather than to the recipe — a work VPN, a monitor
+# layout — goes in that machine's own omakase, ~/.config/omasushi/omasushi.yaml,
+# which is never published (`omasushi export --to machine`).
 
 name: my-setup
 description: What this setup is about, in one line.

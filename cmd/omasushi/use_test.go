@@ -93,21 +93,34 @@ func TestResolveUsesSplitRepoRoot(t *testing.T) {
 	}
 }
 
-// export writes to the user's own omakase when one is marked, --to still wins,
-// and with neither the old "pick one" error stands.
-func TestExportTargetPrefersMine(t *testing.T) {
-	rs := []Omakase{{Name: "someone/base"}, {Name: "me/setup"}}
-	if got, err := exportTarget(rs, "", "me/setup"); err != nil || got.Name != "me/setup" {
-		t.Errorf("mine: got %v, %v", got, err)
+// export writes to the recipe when there is one, falls back to this machine —
+// which is always there — and --to still wins over both.
+func TestExportTargetPrefersRecipe(t *testing.T) {
+	setup := t.TempDir()
+	rs := []Omakase{{Name: "someone/base", Repo: "/elsewhere"}, {Name: "me/setup", Repo: setup}, {Name: MachineName}}
+	withRecipe := &Machine{Recipe: setup}
+	if got, err := exportTarget(rs, "", withRecipe); err != nil || got.Name != "me/setup" {
+		t.Errorf("recipe: got %v, %v", got, err)
 	}
-	if got, err := exportTarget(rs, "someone/base", "me/setup"); err != nil || got.Name != "someone/base" {
-		t.Errorf("--to over mine: got %v, %v", got, err)
+	if got, err := exportTarget(rs, "someone/base", withRecipe); err != nil || got.Name != "someone/base" {
+		t.Errorf("--to over the recipe: got %v, %v", got, err)
 	}
-	if _, err := exportTarget(rs, "", ""); err == nil {
-		t.Error("no mine, several in use: want error")
+	if got, err := exportTarget(rs, "machine", withRecipe); err != nil || got.Name != MachineName {
+		t.Errorf("--to machine: got %v, %v", got, err)
 	}
-	if _, err := exportTarget(rs, "", "gone/away"); err == nil {
-		t.Error("mine not among the active omakases: want error")
+
+	// no recipe: this machine takes it, and --to recipe says what is missing
+	if got, err := exportTarget(rs, "", &Machine{}); err != nil || got.Name != MachineName {
+		t.Errorf("no recipe: got %v, %v", got, err)
+	}
+	if _, err := exportTarget(rs, "recipe", &Machine{}); err == nil {
+		t.Error("--to recipe with none set: want error")
+	}
+
+	// a split recipe cannot be guessed: name the part
+	split := []Omakase{{Name: "me/setup/kitty", Repo: setup}, {Name: "me/setup/herdr", Repo: setup}}
+	if _, err := exportTarget(split, "", withRecipe); err == nil {
+		t.Error("split recipe: want an error naming the parts")
 	}
 }
 
