@@ -93,19 +93,19 @@ func TestPartsExpandAndConfig(t *testing.T) {
 	// use records the repository as the user typed it, and loading the machine
 	// manifest expands it into its parts
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	machine := &Machine{}
-	if _, err := machine.Add(repo, false); err != nil {
+	makanai := &Makanai{}
+	if _, err := makanai.Add(repo, false); err != nil {
 		t.Fatal(err)
 	}
-	if len(machine.Use) != 1 || machine.Use[0].Source != repo {
-		t.Fatalf("machine manifest after use: %+v", machine.Use)
+	if len(makanai.Use) != 1 || makanai.Use[0].Source != repo {
+		t.Fatalf("makanai after use: %+v", makanai.Use)
 	}
-	loaded, err := activeOmakases(machine, "")
+	loaded, err := activeOmakases(makanai, "")
 	if err != nil || len(loaded) != 3 || loaded[1].Dir != filepath.Join(repo, "kitty") {
 		t.Fatalf("activeOmakases: %v %+v", err, names(loaded))
 	}
-	if loaded[2].Name != MachineName {
-		t.Errorf("the machine is the top layer, got %v", names(loaded))
+	if loaded[2].Name != MakanaiName {
+		t.Errorf("the makanai is the top layer, got %v", names(loaded))
 	}
 
 	// a plain repository without parts still loads as one omakase

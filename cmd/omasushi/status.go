@@ -58,7 +58,7 @@ type SyncStatus struct {
 // gatherStatus reports on the omakases in use; recipeRepo names the checkout
 // this machine publishes, so its omakases can be marked as the user's own.
 func gatherStatus(omakases []Omakase, host string, have *State, recipeRepo string) Status {
-	st := Status{Host: host, Config: machinePath(), Omakases: []OmakaseStatus{}}
+	st := Status{Host: host, Config: makanaiPath(), Omakases: []OmakaseStatus{}}
 	for _, r := range omakases {
 		o := OmakaseStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local, Recipe: recipeRepo != "" && r.Repo == recipeRepo, Via: r.Via, Only: r.Only.paths()}
 		if r.Manifest != nil {
@@ -110,7 +110,7 @@ func isGitRepo(dir string) bool {
 
 func printStatus(st Status) {
 	fmt.Printf("host      %s\n", st.Host)
-	fmt.Printf("manifest  %s\n", tildify(st.Config))
+	fmt.Printf("makanai   %s\n", tildify(st.Config))
 
 	fmt.Println("\nomakases")
 	if len(st.Omakases) == 0 {
@@ -126,8 +126,8 @@ func printStatus(st Status) {
 			rev = o.Branch + "@" + o.Commit
 		}
 		var notes []string
-		if o.Name == MachineName {
-			notes = append(notes, "this machine")
+		if o.Name == MakanaiName {
+			notes = append(notes, "makanai")
 		}
 		if o.Recipe {
 			notes = append(notes, "recipe")

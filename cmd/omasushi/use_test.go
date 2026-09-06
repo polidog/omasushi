@@ -93,27 +93,30 @@ func TestResolveUsesSplitRepoRoot(t *testing.T) {
 	}
 }
 
-// export writes to the recipe when there is one, falls back to this machine —
-// which is always there — and --to still wins over both.
+// export writes to the recipe when there is one, falls back to the makanai —
+// which is always there — and --to still wins over both. "machine", the old
+// name, is still taken.
 func TestExportTargetPrefersRecipe(t *testing.T) {
 	setup := t.TempDir()
-	rs := []Omakase{{Name: "someone/base", Repo: "/elsewhere"}, {Name: "me/setup", Repo: setup}, {Name: MachineName}}
-	withRecipe := &Machine{Recipe: setup}
+	rs := []Omakase{{Name: "someone/base", Repo: "/elsewhere"}, {Name: "me/setup", Repo: setup}, {Name: MakanaiName}}
+	withRecipe := &Makanai{Recipe: setup}
 	if got, err := exportTarget(rs, "", withRecipe); err != nil || got.Name != "me/setup" {
 		t.Errorf("recipe: got %v, %v", got, err)
 	}
 	if got, err := exportTarget(rs, "someone/base", withRecipe); err != nil || got.Name != "someone/base" {
 		t.Errorf("--to over the recipe: got %v, %v", got, err)
 	}
-	if got, err := exportTarget(rs, "machine", withRecipe); err != nil || got.Name != MachineName {
-		t.Errorf("--to machine: got %v, %v", got, err)
+	for _, name := range []string{"makanai", "machine"} {
+		if got, err := exportTarget(rs, name, withRecipe); err != nil || got.Name != MakanaiName {
+			t.Errorf("--to %s: got %v, %v", name, got, err)
+		}
 	}
 
-	// no recipe: this machine takes it, and --to recipe says what is missing
-	if got, err := exportTarget(rs, "", &Machine{}); err != nil || got.Name != MachineName {
+	// no recipe: the makanai takes it, and --to recipe says what is missing
+	if got, err := exportTarget(rs, "", &Makanai{}); err != nil || got.Name != MakanaiName {
 		t.Errorf("no recipe: got %v, %v", got, err)
 	}
-	if _, err := exportTarget(rs, "recipe", &Machine{}); err == nil {
+	if _, err := exportTarget(rs, "recipe", &Makanai{}); err == nil {
 		t.Error("--to recipe with none set: want error")
 	}
 

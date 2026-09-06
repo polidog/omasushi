@@ -101,8 +101,8 @@ Several omakases can be stacked (`omasushi use` again); later ones win on confli
 pending action (`install foo  <- polidog/omakase`), so it stays clear who put
 what on your plate.
 
-What you take is recorded in this machine's own omakase, `~/.config/omasushi/omasushi.yaml`
-— see [This machine](#this-machine).
+What you take is recorded in the [makanai](#makanai), this machine's own omakase at
+`~/.config/omasushi/omasushi.yaml`.
 
 ## Build your own on top of others'
 
@@ -145,15 +145,18 @@ omakase's own `use:` chain — so cherry-picking one package never drags a
 stranger's whole tree in behind it. `list` and `status` show what was taken
 (`only packages.aur, files`).
 
-## This machine
+## Makanai
 
 A machine is not a recipe. What you publish is a repository other people can
 take; what a particular machine needs — a work VPN, a monitor layout, the one
 package you would rather not advertise — belongs to the machine. So omasushi
-keeps them in different files:
+keeps them apart, and the machine's side has a name of its own: the
+**makanai**, the staff meal — cooked in the same kitchen from the same
+ingredients as what goes out to the counter, and never served. It lives at
+`~/.config/omasushi/omasushi.yaml`:
 
 ```yaml
-# ~/.config/omasushi/omasushi.yaml — this machine. Never published.
+# ~/.config/omasushi/omasushi.yaml — the makanai. Never published.
 recipe: ~/src/my-omakase        # the omakase this machine publishes and exports to
 use:                            # ...and what it takes from other people
   - polidog/omakase/kitty
@@ -167,18 +170,20 @@ files:
 It is an `omasushi.yaml` like any other — the same keys, the same `use:`, the
 same `hosts:` — with one key of its own, `recipe:`. That makes three layers of
 one format: the omakases under `use:` at the bottom, your recipe over them, and
-this file over both, so the machine always has the last word.
+the makanai over both, so the machine always has the last word.
 
 ```sh
 omasushi recipe ~/src/my-omakase   # name the omakase this machine publishes
 omasushi export                    # record what is installed — into the recipe
-omasushi export --to machine       # ...or into this machine, where it stays
+omasushi export --to makanai       # ...or into the makanai, where it stays
 omasushi publish                   # only ever offers the recipe
 ```
 
-Only this file never leaves the machine, and it is the one place `publish` will
-not touch. Keep it under a private git repository of your own if you want your
-machines to share it; the belt only ever sees the recipe.
+Only the makanai never leaves the machine, and it is the one place `publish`
+will not touch. `list` and `status` mark it `makanai`, and `diff` says
+`<- makanai` for whatever it puts on the plate. Keep it under a private git
+repository of your own if you want your machines to share it; the belt only
+ever sees the recipe.
 
 `omasushi use`, `remove` and `recipe` all edit this file, so it is also fine to
 edit by hand — `use:` there reads exactly like `use:` in a repository.
@@ -196,8 +201,8 @@ cd my-omakase && git init && git add . && git commit -m "my setup" && gh repo cr
 ```
 
 Anyone can now `omasushi use you/my-omakase`. Anything you would rather not hand
-them stays out of it by living in [this machine's own manifest](#this-machine)
-instead — `omasushi export --to machine`.
+them stays out of it by living in [the makanai](#makanai) instead —
+`omasushi export --to makanai`.
 
 To put it on the [omasushi.dev](https://omasushi.dev) conveyor belt where others can find it:
 
@@ -206,7 +211,7 @@ omasushi publish            # opens the prefilled submission issue in your brows
 ```
 
 With no argument `publish` takes the checkout you are standing in, else this
-machine's `recipe:`; this machine's own manifest it refuses outright. It reads
+machine's `recipe:`; the makanai it refuses outright. It reads
 the repo URL from `origin`, checks that `omasushi.yaml` is committed and pushed, and opens a prefilled "Submit an omakase" issue on this repository —
 Omarchy-plugin style. Press Submit there; a workflow validates the repo (the site
 fetches `omasushi.yaml` from the public repo itself), puts it on the belt and
@@ -228,7 +233,7 @@ comments the plate's URL on the issue. `--dry-run` only prints the issue URL;
 | `claude.skills` / `claude.commands` (dir) | same, but always for Claude Code (`~/.claude/skills`, `~/.claude/commands`), whatever the default agent |
 | `files` `{omakase-path: ~/dest}` | symlink; an existing real file is moved to `.bak` |
 | `hosts.<hostname>` | overlay merged onto the base for that machine |
-| `recipe` | **this machine's manifest only** (`~/.config/omasushi/omasushi.yaml`): the omakase this machine publishes and exports to |
+| `recipe` | **the makanai only** (`~/.config/omasushi/omasushi.yaml`, this machine's own omakase): the omakase this machine publishes and exports to |
 | `parts` (root only) | feature-sized pieces, written inline or as sub-directories with their own `omasushi.yaml`; `use owner/repo` takes them all, `use owner/repo/<part>` one. A manifest that declares parts is only their index — its own sections are not applied |
 
 See [`omakase-template/omasushi.yaml`](omakase-template/omasushi.yaml) for a commented example.
@@ -238,7 +243,7 @@ See [`omakase-template/omasushi.yaml`](omakase-template/omasushi.yaml) for a com
 ```
 omasushi use [--recipe] <owner/repo[/part]|url|path>
                                      add an omakase (or one part of a split repo) to
-                                     this machine's use:; --recipe puts it in recipe:
+                                     the makanai's use:; --recipe puts it in recipe:
 omasushi recipe [path|none]          show or set the omakase this machine publishes
 omasushi list | update | remove <name>
 omasushi status [--json]             where am I: omakases + their git state, this
@@ -250,9 +255,9 @@ omasushi unlink [name] [--dry-run]   undo sync's links: remove the symlinks, put
                                      .bak originals back (never uninstalls); links
                                      with no .bak are listed, since they leave a hole
                                      (plan/apply/clean still work as aliases)
-omasushi export [--to machine|recipe|omakase] [--host name]
+omasushi export [--to makanai|recipe|omakase] [--host name]
                                      record installed things into an omakase (add-only);
-                                     the recipe when set, else this machine
+                                     the recipe when set, else the makanai
 omasushi init [dir]                  scaffold an omakase
 omasushi publish [name|repo|path] [--dry-run]
                                      register an omakase on omasushi-web
@@ -260,7 +265,7 @@ omasushi skill install|update|remove|list [--agent name]
                                      copy the bundled omasushi skill into an agent's
                                      global skills dir (no omakase needed)
 omasushi -f omasushi.yaml <cmd>      single-manifest mode, for working inside an omakase
-                                     (this machine's own manifest takes no part)
+                                     (the makanai takes no part)
 omasushi -H <host> <cmd>             resolve hosts.<host> as if on that machine
 ```
 
@@ -281,8 +286,8 @@ separately, from [polidog/omarchy-omasushi](https://github.com/polidog/omarchy-o
 ## Notes
 
 - Omakases are meant to be public: keep tokens and per-machine secrets out of `files/`.
-  What belongs to one machine belongs in `~/.config/omasushi/omasushi.yaml`, which is
-  never published.
+  What belongs to one machine belongs in the makanai, `~/.config/omasushi/omasushi.yaml`,
+  which is never published.
 - Machine-specific bits (GPU drivers, monitor layouts) go under `hosts.<hostname>`.
 - `omarchy font set` / `theme set` rewrite terminal configs in place, turning a symlink
   back into a file. Copy the new file into the omakase and `sync` again.
