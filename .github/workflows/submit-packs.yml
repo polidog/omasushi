@@ -1,13 +1,13 @@
-# The belt's front door: turns a "Submit an omakase" issue into a plate on
-# omasushi-web. The web's POST /api/omakase does the actual validation (it
-# fetches omasushi.yaml from the public repo); this workflow just relays the
-# repo and the verdict. Approval is automatic — passing validation is the
+# The belt's front door: turns a "Submit packs" issue into plates on
+# omasushi-web, one per pack. The web's POST /api/omakase does the actual
+# validation (it fetches the public repo's omasushi.yaml files); this workflow
+# just relays the repo and the verdict. Approval is automatic — passing validation is the
 # review. Runs again whenever the issue is edited, so a failed submission is
 # retried by fixing the repo and editing the issue.
 #
 # Needs the OMASUSHI_SUBMIT_TOKEN secret (same value as the web's
 # $SUBMIT_TOKEN); the OMASUSHI_WEB_URL repo variable can point elsewhere.
-name: submit-omakase
+name: submit-packs
 
 on:
   issues:
@@ -17,12 +17,12 @@ permissions:
   issues: write
 
 concurrency:
-  group: submit-omakase-${{ github.event.issue.number }}
+  group: submit-packs-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
   register:
-    if: contains(github.event.issue.labels.*.name, 'omakase-submission') && github.event.issue.state == 'open'
+    if: contains(github.event.issue.labels.*.name, 'pack-submission') && github.event.issue.state == 'open'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v7
@@ -75,9 +75,9 @@ jobs:
             if (!json.ok) {
               await comment(
                 `❌ ${json.message ?? json.error}\n\n` +
-                "Make sure the repository is public with `omasushi.yaml` committed at its " +
-                "root and pushed to `main` / `master`, then **edit this issue** to run " +
-                "validation again.",
+                "Make sure the repository is public, pushed to `main` / `master`, and holds " +
+                "packs (a subdirectory with an `omasushi.yaml` each, or one at the root), " +
+                "then **edit this issue** to run validation again.",
               );
               return;
             }

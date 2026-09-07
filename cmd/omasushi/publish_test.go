@@ -42,7 +42,7 @@ func TestSubmitIssueURL(t *testing.T) {
 		t.Errorf("got %q; want the issues/new URL", got)
 	}
 	for _, want := range []string{
-		"template=submit-omakase.yml",
+		"template=submit-packs.yml",
 		"repo=https%3A%2F%2Fgithub.com%2Fpolidog%2Fomakase",
 		"title=Submit%3A+github.com%2Fpolidog%2Fomakase",
 	} {

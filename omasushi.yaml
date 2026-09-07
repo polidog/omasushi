@@ -1,12 +1,8 @@
-# This repository is itself an omakase, split into feature-sized parts.
-#   omasushi use polidog/omasushi          # everything below
-#   omasushi use polidog/omasushi/claude   # just the Claude Code skill
+# This repository is itself two packs, of what belongs to the tool:
+#   omasushi use polidog/omasushi          # both
+#   omasushi use polidog/omasushi/claude   # just the agent skill
 #
-# Only what belongs to the tool lives here. For a machine setup to copy, see
-# polidog/omakase - `omasushi use polidog/omakase/herdr` for the herdr config.
+# Packs to copy from live in polidog/omakase — `omasushi use polidog/omakase/herdr`
+# for the herdr config, for instance.
 name: omasushi
-description: The omasushi CLI's own bar widget and Claude Code skill.
-
-parts:
-  - plugin   # Omarchy bar widget
-  - claude   # skill for driving omasushi (Claude Code, Codex, ...)
+description: The omasushi CLI's own bar widget and agent skill.

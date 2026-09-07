@@ -1,0 +1,24 @@
+name: Submit packs
+description: Put your packs on the omasushi.dev belt
+title: "Submit packs"
+labels: ["pack-submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for serving! Make sure the repository is **public**, on `main` or
+        `master`, and holds packs — a subdirectory with an `omasushi.yaml` each,
+        or a single `omasushi.yaml` at the root.
+
+        A workflow validates the repository and, when it checks out, puts each
+        pack on the belt automatically and comments their URLs here — no human
+        review. If validation fails the error is commented instead; fix the
+        repository and **edit this issue** to run it again.
+  - type: input
+    id: repo
+    attributes:
+      label: Repository
+      description: owner/repo, or a github.com / gitlab.com URL
+      placeholder: your-name/my-packs
+    validations:
+      required: true

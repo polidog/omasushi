@@ -31,74 +31,63 @@ func init() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `omasushi — share your Omarchy setup as an omakase repository
+	fmt.Fprintln(os.Stderr, `omasushi — add a feature to an Omarchy machine as one pack
 
-usage: omasushi [-f omasushi.yaml] [-H host] <command> [args]
+usage: omasushi [-f <pack-dir>] <command> [args]
 
-omakases:
-  use [--recipe] <owner/repo[/part]|url|path>
-                              add an omakase to this machine's use: list (clone
-                              it, or point at a local dir); owner/repo takes
-                              every part of a split repository, owner/repo/herdr
-                              just that one. --recipe puts it in recipe: instead
-  recipe [<path>|none]        show or set the omakase this machine publishes
-  list                        show omakases in use (name, source, checkout;
-                              "via X" = pulled in by X's use: declaration)
-  update                      git pull every remote omakase
-  remove <name>               forget an omakase (unlinks its files, deletes
-                              its managed checkout)
-  init [dir]                  scaffold a new omakase repository
-  publish [<name>|<repo>|<path>]
-                              put an omakase on omasushi-web: opens the
-                              prefilled submission issue on GitHub, where a
+packs:
+  use <owner/repo[/pack]|url|path>
+                              take a pack (clone its repository, or point at a
+                              local dir); owner/repo takes every pack of a
+                              repository, owner/repo/herdr just that one
+  list                        show packs in use (name, source, checkout;
+                              "via X" = pulled in by X's use:)
+  update                      git pull every remote repository
+  remove <name>               forget a pack (unlinks its files, deletes its
+                              managed checkout once nothing else needs it)
+  init <dir>                  scaffold a repository of packs, or a pack inside one
+  publish [<name>|<repo>|<path>] [--dry-run]
+                              put a repository of packs on omasushi.dev: opens
+                              the prefilled submission issue on GitHub, where a
                               workflow validates it onto the belt
 
 machine:
-  status [--json]             where am I: omakases, their git state, this
+  status [--json]             where am I: packs, their git state, this
                               machine's setup, and how far apart they are
   diff [--json]               show what sync would do
   sync                        install missing packages/plugins, link files/skills
   unlink [<name>] [--dry-run] undo sync's links: remove the symlinks and put
                               the .bak originals back (packages stay installed)
                               (plan/apply/clean still work as aliases)
-  export [--to <omakase>] [--host <name>]
-                              record this machine's installed packages/plugins
-                              into an omakase: the recipe when set, else the
-                              makanai. --to makanai|recipe|<name> picks another
-                              (--host writes under hosts.<name>)
+  export <pack-dir> | --local record this machine's installed packages/plugins
+                              that no pack in use declares yet, into that pack
+                              (add-only) — or into this machine's own file
   skill install|update|remove|list [--agent <name>]
                               put the bundled omasushi skill into the default
                               agent's global skills (~/.claude/skills,
-                              ~/.codex/skills, ...) — no omakase needed;
+                              ~/.codex/skills, ...) — no pack needed;
                               update rewrites it after a newer go install
   version
 
-the makanai is this machine's own omakase, ~/.config/omasushi/omasushi.yaml:
-an ordinary manifest (packages, files, hosts) whose use: names what it takes
-from other people and whose recipe: names the omakase it publishes. Like the
-staff meal it is named after, it never leaves the kitchen; publish only ever
-offers the recipe.
+this machine's own file is ~/.config/omasushi/omasushi.yaml: the packs it
+takes under use:, plus what belongs to the machine alone in the same sections
+a pack has. It is never published.
 
--f path      use a single manifest instead of the makanai
-             (defaults to ./omasushi.yaml when that one is empty)
--H host      resolve hosts.<host> overlays as if running on that machine`)
+-f dir       use one pack (or repository of packs) instead of this machine's
+             file (defaults to . when that file is empty)`)
 	os.Exit(2)
 }
 
 func main() {
-	file := flag.String("f", "", "manifest path (single-omakase mode)")
-	host := flag.String("H", "", "hostname to resolve (default: this machine)")
+	file := flag.String("f", "", "pack directory (single-pack mode)")
 	flag.Usage = usage
 	flag.Parse()
 	if flag.NArg() < 1 {
 		usage()
 	}
-	if *host == "" {
-		*host, _ = os.Hostname()
-	}
 	cmd, args := flag.Arg(0), flag.Args()[1:]
 
-	makanai, err := LoadMakanai()
+	local, err := LoadLocal()
 	die(err)
 
 	switch cmd {
@@ -106,120 +95,78 @@ func main() {
 		fmt.Println("omasushi", version)
 		return
 	case "init":
-		dir := "."
-		if len(args) > 0 {
-			dir = args[0]
-		}
-		die(initOmakase(dir))
-		return
-	case "use":
-		fs := flag.NewFlagSet("use", flag.ExitOnError)
-		recipe := fs.Bool("recipe", false, "the omakase this machine publishes, not one it takes from")
-		fs.Parse(args)
-		if fs.NArg() != 1 {
+		if len(args) != 1 {
 			usage()
 		}
-		rs, err := makanai.Add(fs.Arg(0), *recipe)
-		die(err)
-		for _, r := range rs {
-			fmt.Printf("using %s from %s (%s)\n", r.Name, r.Source, tildify(r.Dir))
+		die(initDir(args[0]))
+		return
+	case "use":
+		if len(args) != 1 {
+			usage()
 		}
-		all, err := resolveUses(rs)
+		ps, err := local.Add(args[0])
 		die(err)
-		for _, r := range all {
-			if r.Via != "" {
-				fmt.Printf("using %s (via %s) (%s)\n", r.Name, r.Via, tildify(r.Dir))
+		for _, p := range ps {
+			fmt.Printf("using %s from %s (%s)\n", p.Name, p.Source, tildify(p.Dir))
+		}
+		all, err := resolveUses(ps)
+		die(err)
+		for _, p := range all {
+			if p.Via != "" {
+				fmt.Printf("using %s (via %s) (%s)\n", p.Name, p.Via, tildify(p.Dir))
 			}
 		}
-		if *recipe {
-			fmt.Printf("recipe: %s — export writes here, and publish offers this one\n", makanai.Recipe)
-			if len(rs) > 0 && !rs[0].Local {
-				fmt.Fprintf(os.Stderr, "note: it is a managed checkout under %s — for a recipe you edit and push, clone it yourself and `omasushi recipe <dir>`\n",
-					tildify(omakasesDir()))
-			}
-		}
-		fmt.Printf("wrote %s\n", tildify(makanaiPath()))
+		fmt.Printf("wrote %s\n", tildify(localPath()))
 		return
 	case "remove":
 		if len(args) != 1 {
 			usage()
 		}
-		omakases, err := activeOmakases(makanai, "")
+		packs, err := activePacks(local, "")
 		die(err)
-		for _, r := range omakases {
-			if r.Name == args[0] {
-				_, err := Unlink([]Omakase{r}, *host, false)
+		for _, p := range packs {
+			if p.Name == args[0] {
+				_, err := Unlink([]Pack{p}, false)
 				die(err)
 			}
 		}
-		die(makanai.Remove(args[0]))
+		die(local.Remove(args[0]))
 		fmt.Println("removed", args[0])
 		return
-	case "recipe", "mine": // mine is the pre-recipe: name
-		if cmd == "mine" {
-			fmt.Fprintln(os.Stderr, "note: `mine` is now `recipe` — the omakase this machine publishes")
-		}
-		if len(args) == 0 {
-			if makanai.Recipe == "" {
-				fmt.Println("not set — omasushi recipe <path>, or omasushi use --recipe <repo>")
-			} else {
-				fmt.Println(makanai.Recipe)
-			}
-			return
-		}
-		if args[0] == "none" {
-			makanai.Recipe = ""
-			die(makanai.Save())
-			fmt.Println("recipe: unset")
-			return
-		}
-		src, err := parseSource(args[0])
-		die(err)
-		if _, err := os.Stat(filepath.Join(checkoutDir(src), ManifestFile)); err != nil {
-			die(fmt.Errorf("%s has no %s (run `omasushi use --recipe %s` to clone it first)", args[0], ManifestFile, args[0]))
-		}
-		makanai.Recipe = omakaseName(src.Repo, src.Part)
-		die(makanai.Save())
-		fmt.Printf("recipe: %s — export writes here, and publish offers this one\n", makanai.Recipe)
-		return
+	case "recipe", "mine":
+		die(fmt.Errorf("`%s` is gone: export names the pack it writes to (omasushi export <pack-dir>), publish the checkout you stand in", cmd))
 	case "publish":
-		die(publishCmd(makanai, *file, args))
+		die(publishCmd(local, *file, args))
 		return
 	case "skill":
 		die(skillCmd(args))
 		return
 	}
 
-	omakases, err := activeOmakases(makanai, *file)
+	packs, err := activePacks(local, *file)
 	die(err)
 
 	switch cmd {
 	case "list":
-		if len(omakases) == 0 {
-			fmt.Println("no omakases in use (try: omasushi use owner/repo)")
+		if len(packs) == 0 {
+			fmt.Println("no packs in use (try: omasushi use owner/repo)")
 		}
-		for _, r := range omakases {
+		for _, p := range packs {
 			kind := "git"
-			if r.Local {
+			if p.Local {
 				kind = "local"
 			}
 			var note string
-			switch {
-			case r.Name == MakanaiName:
-				note = "  (makanai)"
-			case r.Repo == makanai.recipeRepo():
-				note = "  (recipe)"
+			if p.Name == LocalName {
+				note = "  (this machine)"
 			}
-			if r.Via != "" {
-				note += "  (via " + r.Via + ")"
+			if p.Via != "" {
+				note += "  (via " + p.Via + ")"
 			}
-			if paths := r.Only.paths(); len(paths) > 0 {
-				note += "  (only " + strings.Join(paths, ", ") + ")"
-			}
-			fmt.Printf("%-28s %-6s %-44s %s%s\n", r.Name, kind, r.Source, tildify(r.Dir), note)
+			fmt.Printf("%-28s %-6s %-44s %s%s\n", p.Name, kind, p.Source, tildify(p.Dir), note)
 		}
 	case "update":
-		die(Update(omakases))
+		die(Update(packs))
 		die(updateInstalledSkills())
 	case "status":
 		fs := flag.NewFlagSet("status", flag.ExitOnError)
@@ -227,7 +174,7 @@ func main() {
 		fs.Parse(args)
 		have, err := Probe()
 		die(err)
-		st := gatherStatus(omakases, *host, have, makanai.recipeRepo())
+		st := gatherStatus(packs, have)
 		if *asJSON {
 			printStatusJSON(st)
 		} else {
@@ -239,16 +186,16 @@ func main() {
 		fs.Parse(args)
 		have, err := Probe()
 		die(err)
-		actions, extras := Plan(omakases, *host, have)
+		actions, extras := Plan(packs, have)
 		if *asJSON {
-			printPlanJSON(omakases, actions, extras)
+			printPlanJSON(packs, actions, extras)
 		} else {
 			printPlan(actions, extras)
 		}
 	case "sync", "apply": // apply is the pre-rename alias
 		have, err := Probe()
 		die(err)
-		actions, _ := Plan(omakases, *host, have)
+		actions, _ := Plan(packs, have)
 		if len(actions) == 0 {
 			fmt.Println("up to date")
 			return
@@ -260,31 +207,30 @@ func main() {
 		fs := flag.NewFlagSet("unlink", flag.ExitOnError)
 		dryRun := fs.Bool("dry-run", false, "only show what would be unlinked")
 		fs.Parse(args)
-		targets := omakases
+		targets := packs
 		if fs.NArg() > 0 {
-			t, err := pickOmakase(omakases, fs.Arg(0))
+			t, err := pickPack(packs, fs.Arg(0))
 			die(err)
-			targets = []Omakase{*t}
+			targets = []Pack{*t}
 		}
-		undone, err := Unlink(targets, *host, *dryRun)
+		undone, err := Unlink(targets, *dryRun)
 		die(err)
 		if len(undone) == 0 {
 			fmt.Println("nothing linked")
 		}
 	case "export":
 		fs := flag.NewFlagSet("export", flag.ExitOnError)
-		toHost := fs.String("host", "", "write into hosts.<name> overlay")
-		to := fs.String("to", "", "where to write: makanai, recipe, or an omakase name (default: recipe, else makanai)")
+		toLocal := fs.Bool("local", false, "write into this machine's own file instead of a pack")
 		fs.Parse(args)
-		target, err := exportTarget(omakases, *to, makanai)
+		target, err := exportTarget(packs, local, fs.Args(), *toLocal)
 		die(err)
 		if !target.Local {
-			fmt.Fprintf(os.Stderr, "note: %s is a managed checkout under %s — commit & push there yourself, or point recipe: at a clone of your own\n",
-				target.Name, tildify(omakasesDir()))
+			fmt.Fprintf(os.Stderr, "note: %s is a managed checkout under %s — commit & push there yourself, or export into a clone of your own\n",
+				target.Name, tildify(packsDir()))
 		}
 		have, err := Probe()
 		die(err)
-		added := export(omakases, target, have, *host, *toHost)
+		added := export(packs, target, have)
 		if len(added) == 0 {
 			fmt.Println("nothing new")
 			return
@@ -299,90 +245,92 @@ func main() {
 	}
 }
 
-// activeOmakases picks the omakase set: -f wins; otherwise the makanai,
-// this machine's own omakase, whose use: chain (the recipe last, so it wins) is expanded into the
-// layers underneath it. A makanai that declares nothing at all falls back to an
-// omasushi.yaml in the working directory, so a checkout can be driven in place.
-func activeOmakases(makanai *Makanai, file string) ([]Omakase, error) {
-	var rs []Omakase
+// activePacks picks the pack set: -f wins; otherwise this machine's file,
+// whose use: is expanded into the layers underneath it. A file that says
+// nothing at all falls back to the working directory, so a checkout can be
+// driven in place.
+func activePacks(local *Local, file string) ([]Pack, error) {
+	var ps []Pack
 	var err error
 	switch {
 	case file != "":
-		rs, err = omakaseFromDir(file)
-	case makanai.blank():
-		if _, statErr := os.Stat(ManifestFile); statErr != nil {
+		ps, err = packsFromDir(file)
+	case local.blank():
+		if !isPackRepo(".") {
 			return nil, nil
 		}
-		rs, err = omakaseFromDir(ManifestFile)
+		ps, err = packsFromDir(".")
 	default:
-		rs = []Omakase{makanai.Omakase()}
+		ps = []Pack{local.Pack()}
 	}
-	if err != nil || rs == nil {
-		return rs, err
+	if err != nil || ps == nil {
+		return ps, err
 	}
-	return resolveUses(rs)
+	return resolveUses(ps)
 }
 
-// exportTarget picks where export writes: --to when given (makanai, recipe, or
-// an omakase name), else the recipe, else this machine — the one place that is
-// always there to record into.
-func exportTarget(omakases []Omakase, to string, makanai *Makanai) (*Omakase, error) {
-	switch to {
-	case "recipe", "":
-		rs := omakasesInRepo(omakases, makanai.recipeRepo())
-		switch {
-		case len(rs) == 1:
-			return rs[0], nil
-		case len(rs) > 1:
-			var names []string
-			for _, r := range rs {
-				names = append(names, r.Name)
-			}
-			return nil, fmt.Errorf("the recipe is split into %d parts; pick one with --to (%s), or --to makanai", len(rs), strings.Join(names, ", "))
-		case to == "recipe":
-			return nil, fmt.Errorf("no recipe set; `omasushi recipe <path>` names the omakase this machine publishes")
-		}
-		to = MakanaiName
-	case "machine":
-		to = MakanaiName
-	}
-	return pickOmakase(omakases, to)
-}
-
-// omakasesInRepo picks the omakases that live in one checkout — several when
-// it is split into parts.
-func omakasesInRepo(omakases []Omakase, repo string) []*Omakase {
-	var out []*Omakase
-	if repo == "" {
-		return nil
-	}
-	for i := range omakases {
-		if omakases[i].Repo == repo {
-			out = append(out, &omakases[i])
-		}
-	}
-	return out
-}
-
-func pickOmakase(omakases []Omakase, name string) (*Omakase, error) {
+// exportTarget picks where export writes: this machine's file with --local,
+// else the pack directory named — one pack, so a repository of several is
+// refused with their names. A pack already in use is written through its
+// loaded manifest; any other pack directory is loaded fresh.
+func exportTarget(packs []Pack, local *Local, args []string, toLocal bool) (*Pack, error) {
 	switch {
-	case len(omakases) == 0:
-		return nil, fmt.Errorf("no omakase in use; run `omasushi init` or `omasushi use <repo>` first")
-	case name == "" && len(omakases) == 1:
-		return &omakases[0], nil
-	case name == "":
+	case toLocal && len(args) > 0:
+		return nil, fmt.Errorf("export takes a pack directory or --local, not both")
+	case toLocal:
+		for i := range packs {
+			if packs[i].Name == LocalName {
+				return &packs[i], nil
+			}
+		}
+		p := local.Pack()
+		return &p, nil
+	case len(args) != 1:
 		var names []string
-		for _, r := range omakases {
-			names = append(names, r.Name)
+		for _, p := range packs {
+			if p.Local && p.Name != LocalName {
+				names = append(names, tildify(p.Dir))
+			}
 		}
-		return nil, fmt.Errorf("several omakases in use (%s); pick one with --to, or name your own once with `omasushi recipe <path>`", strings.Join(names, ", "))
+		hint := ""
+		if len(names) > 0 {
+			hint = " — in use here: " + strings.Join(names, ", ")
+		}
+		return nil, fmt.Errorf("export needs a pack directory to write into, or --local for this machine's own file%s", hint)
 	}
-	for i := range omakases {
-		if omakases[i].Name == name {
-			return &omakases[i], nil
+	abs, err := filepath.Abs(args[0])
+	if err != nil {
+		return nil, err
+	}
+	for i := range packs {
+		if packs[i].Dir == abs {
+			return &packs[i], nil
 		}
 	}
-	return nil, fmt.Errorf("no omakase named %q", name)
+	ps, err := packsFromDir(abs)
+	if err != nil {
+		return nil, err
+	}
+	if len(ps) != 1 || ps[0].Dir != abs {
+		var names []string
+		for _, p := range ps {
+			names = append(names, p.Sub)
+		}
+		return nil, fmt.Errorf("%s is a repository of packs (%s); name one of them", args[0], strings.Join(names, ", "))
+	}
+	return &ps[0], nil
+}
+
+func pickPack(packs []Pack, name string) (*Pack, error) {
+	if len(packs) == 0 {
+		return nil, fmt.Errorf("no pack in use; run `omasushi use <repo>` first")
+	}
+	for i := range packs {
+		if packs[i].Name == name {
+			return &packs[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no pack named %q", name)
 }
 
 func printPlan(actions []Action, extras []string) {
@@ -390,36 +338,33 @@ func printPlan(actions []Action, extras []string) {
 		fmt.Println("up to date")
 	}
 	for _, a := range actions {
-		if a.Omakase != "" {
-			fmt.Printf("+ %-15s %-44s <- %s\n", a.Kind, a.Desc, a.Omakase)
+		if a.Pack != "" {
+			fmt.Printf("+ %-15s %-44s <- %s\n", a.Kind, a.Desc, a.Pack)
 		} else {
 			fmt.Printf("+ %-15s %s\n", a.Kind, a.Desc)
 		}
 	}
 	if len(extras) > 0 {
-		fmt.Println("\ninstalled but not in any omakase (run `omasushi export` to record them as yours):")
+		fmt.Println("\ninstalled but not in any pack (omasushi export <pack-dir> records them; --local keeps them on this machine):")
 		for _, e := range extras {
 			fmt.Println("  ?", e)
 		}
 	}
 }
 
-func printPlanJSON(omakases []Omakase, actions []Action, extras []string) {
-	type omakaseOut struct {
+func printPlanJSON(packs []Pack, actions []Action, extras []string) {
+	type packOut struct {
 		Name  string `json:"name"`
 		Dir   string `json:"dir"`
 		Local bool   `json:"local"`
 	}
 	out := struct {
-		Omakases []omakaseOut `json:"omakases"`
-		Actions  []Action     `json:"actions"`
-		Extras   []string     `json:"extras"`
-	}{Actions: []Action{}, Extras: []string{}}
-	for _, r := range omakases {
-		out.Omakases = append(out.Omakases, omakaseOut{r.Name, r.Dir, r.Local})
-	}
-	if out.Omakases == nil {
-		out.Omakases = []omakaseOut{}
+		Packs   []packOut `json:"packs"`
+		Actions []Action  `json:"actions"`
+		Extras  []string  `json:"extras"`
+	}{Packs: []packOut{}, Actions: []Action{}, Extras: []string{}}
+	for _, p := range packs {
+		out.Packs = append(out.Packs, packOut{p.Name, p.Dir, p.Local})
 	}
 	if actions != nil {
 		out.Actions = actions
@@ -434,35 +379,20 @@ func printPlanJSON(omakases []Omakase, actions []Action, extras []string) {
 }
 
 // export adds installed-but-unlisted items to target. It only adds; it never
-// removes entries. Items already declared by any omakase (base or the
-// resolved host overlay) are skipped.
-func export(omakases []Omakase, target *Omakase, have *State, host, toHost string) (added []string) {
-	var resolved Overlay
-	for _, r := range omakases {
-		h := host
-		if toHost != "" {
-			h = toHost
-		}
-		resolved = resolved.merge(r.Resolve(h))
+// removes entries. Items already declared by any pack in use are skipped.
+func export(packs []Pack, target *Pack, have *State) (added []string) {
+	var resolved Manifest
+	for _, p := range packs {
+		resolved = resolved.merge(*p.Manifest)
 	}
 	m := target.Manifest
-	var t *Overlay
-	if toHost == "" {
-		t = &Overlay{Packages: m.Packages, Omarchy: m.Omarchy, Herdr: m.Herdr, Claude: m.Claude, Agent: m.Agent, Files: m.Files}
-	} else {
-		if m.Hosts == nil {
-			m.Hosts = map[string]Overlay{}
-		}
-		o := m.Hosts[toHost]
-		t = &o
-	}
 
 	if resolved.Omarchy.Font == "" && have.Font != "" {
-		t.Omarchy.Font = have.Font
+		m.Omarchy.Font = have.Font
 		added = append(added, "omarchy.font: "+have.Font)
 	}
 	if resolved.Omarchy.Defaults == (Defaults{}) && have.Defaults != (Defaults{}) {
-		t.Omarchy.Defaults = have.Defaults
+		m.Omarchy.Defaults = have.Defaults
 		added = append(added, fmt.Sprintf("omarchy.defaults: agent=%s browser=%s editor=%s terminal=%s",
 			have.Defaults.Agent, have.Defaults.Browser, have.Defaults.Editor, have.Defaults.Terminal))
 	}
@@ -481,7 +411,7 @@ func export(omakases []Omakase, target *Omakase, have *State, host, toHost strin
 	for _, p := range aur {
 		added = append(added, "packages.aur: "+p)
 	}
-	t.Packages.Aur = union(t.Packages.Aur, aur)
+	m.Packages.Aur = union(m.Packages.Aur, aur)
 
 	inOP := map[string]bool{}
 	for _, p := range resolved.Omarchy.Plugins {
@@ -495,7 +425,7 @@ func export(omakases []Omakase, target *Omakase, have *State, host, toHost strin
 	}
 	sort.Slice(ops, func(i, j int) bool { return ops[i].URL < ops[j].URL })
 	for _, p := range ops {
-		t.Omarchy.Plugins = append(t.Omarchy.Plugins, OmarchyPlugin{URL: p.URL, Enable: p.Enabled})
+		m.Omarchy.Plugins = append(m.Omarchy.Plugins, OmarchyPlugin{URL: p.URL, Enable: p.Enabled})
 		added = append(added, "omarchy.plugins: "+p.URL)
 	}
 
@@ -511,48 +441,64 @@ func export(omakases []Omakase, target *Omakase, have *State, host, toHost strin
 	}
 	sort.Strings(hps)
 	for _, s := range hps {
-		t.Herdr.Plugins = append(t.Herdr.Plugins, HerdrPlugin{Source: s})
+		m.Herdr.Plugins = append(m.Herdr.Plugins, HerdrPlugin{Source: s})
 		added = append(added, "herdr.plugins: "+s)
-	}
-
-	if toHost == "" {
-		m.Packages, m.Omarchy, m.Herdr = t.Packages, t.Omarchy, t.Herdr
-	} else {
-		m.Hosts[toHost] = *t
 	}
 	return added
 }
 
-// initOmakase writes a starter omasushi.yaml and the conventional directories.
-func initOmakase(dir string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+// initDir scaffolds a repository of packs, or — when dir sits inside one
+// (its parent carries an omasushi.yaml) — a pack in it.
+func initDir(dir string) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
 		return err
 	}
-	mp := filepath.Join(dir, ManifestFile)
-	if _, err := os.Stat(mp); err == nil {
-		return fmt.Errorf("%s already exists", mp)
+	if _, err := os.Stat(filepath.Join(abs, ManifestFile)); err == nil {
+		return fmt.Errorf("%s already exists", filepath.Join(dir, ManifestFile))
 	}
-	for _, d := range []string{"files", "skills", "commands"} {
-		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
-			return err
-		}
-		os.WriteFile(filepath.Join(dir, d, ".gitkeep"), nil, 0o644)
+	if _, err := os.Stat(filepath.Join(filepath.Dir(abs), ManifestFile)); err == nil {
+		return initPack(dir, abs)
 	}
-	name := filepath.Base(dir)
-	if abs, err := filepath.Abs(dir); err == nil {
-		name = filepath.Base(abs)
+	return initRepo(dir, abs)
+}
+
+func initRepo(dir, abs string) error {
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		return err
 	}
-	body := fmt.Sprintf(`# omasushi omakase — see https://github.com/polidog/omasushi
+	body := fmt.Sprintf(`# A repository of packs — see https://github.com/polidog/omasushi
+# Every subdirectory with an omasushi.yaml is a pack; this file only names
+# the repository. `+"`omasushi init %s/<pack>`"+` adds one.
 name: %s
 description: ""
+`, dir, filepath.Base(abs))
+	if err := os.WriteFile(filepath.Join(abs, ManifestFile), []byte(body), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("created %s\n", filepath.Join(dir, ManifestFile))
+	fmt.Printf("next: omasushi init %s/<pack>   # a pack: one feature's packages, plugins, config, skills\n", dir)
+	return nil
+}
 
-# use:                # build on other people's omakases; this file wins on conflicts
-#   - polidog/omakase/kitty
-#   - someone/nvim-setup
+func initPack(dir, abs string) error {
+	for _, d := range []string{"files", "skills", "commands"} {
+		if err := os.MkdirAll(filepath.Join(abs, d), 0o755); err != nil {
+			return err
+		}
+		os.WriteFile(filepath.Join(abs, d, ".gitkeep"), nil, 0o644)
+	}
+	body := `# A pack: everything one feature needs on top of stock Omarchy.
+# See https://github.com/polidog/omasushi
+description: ""
+
+# use:                # packs this one needs; loaded underneath it, so this file wins
+#   - ../fonts        # a sibling in this repository
+#   - polidog/omakase/ime
 
 packages:
   pacman: []          # official repos (write by hand)
-  aur: []             # filled in by "omasushi export"
+  aur: []             # filled in by "omasushi export <this dir>"
 
 omarchy:
   # font: "UDEV Gothic NF"
@@ -571,15 +517,15 @@ agent:                # for the Omarchy default agent (omarchy.defaults.agent, e
   commands: commands  # each *.md          -> ~/.claude/commands/<name>.md, ~/.codex/prompts/<name>.md
 # claude: { skills: skills, commands: commands }   # Claude Code only, whatever the default agent
 
-files: {}             # files/kitty.conf: ~/.config/kitty/kitty.conf
+# hypr: hypr/bindings.lua   # a hyprland snippet, loaded after Omarchy's defaults alongside other packs'
 
-hosts: {}             # <hostname>: { packages: ..., files: ... } overlays
-`, name)
-	if err := os.WriteFile(mp, []byte(body), 0o644); err != nil {
+files: {}             # files/kitty.conf: ~/.config/kitty/kitty.conf
+`
+	if err := os.WriteFile(filepath.Join(abs, ManifestFile), []byte(body), 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("created %s\n", mp)
-	fmt.Printf("next: omasushi recipe %s   # then `omasushi export` records this machine into it\n", dir)
+	fmt.Printf("created %s\n", filepath.Join(dir, ManifestFile))
+	fmt.Printf("next: omasushi export %s   # records what this machine has that no pack declares yet\n", dir)
 	return nil
 }
 
@@ -595,8 +541,8 @@ func runActions(actions []Action) int {
 	}
 	var failed []failure
 	for _, a := range actions {
-		if a.Omakase != "" {
-			fmt.Printf("==> %s: %s (%s)\n", a.Kind, a.Desc, a.Omakase)
+		if a.Pack != "" {
+			fmt.Printf("==> %s: %s (%s)\n", a.Kind, a.Desc, a.Pack)
 		} else {
 			fmt.Printf("==> %s: %s\n", a.Kind, a.Desc)
 		}

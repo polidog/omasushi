@@ -11,32 +11,28 @@ import (
 	"strings"
 )
 
-// Status is a snapshot of "where am I": the omakases in use and their git
-// state, what this machine currently has, and how far it is from the
-// omakases. diff answers "what would sync do"; status answers "how am I
-// doing overall".
+// Status is a snapshot of "where am I": the packs in use and their git
+// state, what this machine currently has, and how far it is from the packs.
+// diff answers "what would sync do"; status answers "how am I doing overall".
 type Status struct {
-	Host     string          `json:"host"`
-	Config   string          `json:"config"`
-	Omakases []OmakaseStatus `json:"omakases"`
-	Machine  MachineStatus   `json:"machine"`
-	Sync     SyncStatus      `json:"sync"`
+	Host    string        `json:"host"`
+	Config  string        `json:"config"`
+	Packs   []PackStatus  `json:"packs"`
+	Machine MachineStatus `json:"machine"`
+	Sync    SyncStatus    `json:"sync"`
 }
 
-type OmakaseStatus struct {
-	Name     string   `json:"name"`
-	Source   string   `json:"source"`
-	Dir      string   `json:"dir"`
-	Local    bool     `json:"local"`
-	Recipe   bool     `json:"recipe,omitempty"` // part of the omakase this machine publishes
-	Via      string   `json:"via,omitempty"`    // pulled in by this omakase's use: declaration
-	Only     []string `json:"only,omitempty"`   // manifest paths a filtered use: takes from it
-	HasHost  bool     `json:"hasHostOverlay"`   // declares hosts.<host>
-	Branch   string   `json:"branch,omitempty"`
-	Commit   string   `json:"commit,omitempty"`
-	Modified int      `json:"modified"` // uncommitted changes (git status --porcelain)
-	Ahead    int      `json:"ahead"`    // commits not pushed
-	Behind   int      `json:"behind"`   // commits not pulled (as of last fetch)
+type PackStatus struct {
+	Name     string `json:"name"`
+	Source   string `json:"source"`
+	Dir      string `json:"dir"`
+	Local    bool   `json:"local"`
+	Via      string `json:"via,omitempty"` // pulled in by this pack's use:
+	Branch   string `json:"branch,omitempty"`
+	Commit   string `json:"commit,omitempty"`
+	Modified int    `json:"modified"` // uncommitted changes (git status --porcelain)
+	Ahead    int    `json:"ahead"`    // commits not pushed
+	Behind   int    `json:"behind"`   // commits not pulled (as of last fetch)
 }
 
 type MachineStatus struct {
@@ -55,15 +51,12 @@ type SyncStatus struct {
 	Linked      int            `json:"linked"`      // ...of which are already in place
 }
 
-// gatherStatus reports on the omakases in use; recipeRepo names the checkout
-// this machine publishes, so its omakases can be marked as the user's own.
-func gatherStatus(omakases []Omakase, host string, have *State, recipeRepo string) Status {
-	st := Status{Host: host, Config: makanaiPath(), Omakases: []OmakaseStatus{}}
-	for _, r := range omakases {
-		o := OmakaseStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local, Recipe: recipeRepo != "" && r.Repo == recipeRepo, Via: r.Via, Only: r.Only.paths()}
-		if r.Manifest != nil {
-			_, o.HasHost = r.Manifest.Hosts[host]
-		}
+// gatherStatus reports on the packs in use and this machine.
+func gatherStatus(packs []Pack, have *State) Status {
+	host, _ := os.Hostname()
+	st := Status{Host: host, Config: localPath(), Packs: []PackStatus{}}
+	for _, r := range packs {
+		o := PackStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local, Via: r.Via}
 		if isGitRepo(r.Repo) {
 			o.Branch = run("git", "-C", r.Repo, "rev-parse", "--abbrev-ref", "HEAD")
 			o.Commit = run("git", "-C", r.Repo, "rev-parse", "--short", "HEAD")
@@ -73,7 +66,7 @@ func gatherStatus(omakases []Omakase, host string, have *State, recipeRepo strin
 				o.Behind, _ = strconv.Atoi(ab[1])
 			}
 		}
-		st.Omakases = append(st.Omakases, o)
+		st.Packs = append(st.Packs, o)
 	}
 
 	st.Machine = MachineStatus{
@@ -84,14 +77,14 @@ func gatherStatus(omakases []Omakase, host string, have *State, recipeRepo strin
 		HerdrPlugins:   len(have.HerdrPlugins),
 	}
 
-	actions, extras := Plan(omakases, host, have)
+	actions, extras := Plan(packs, have)
 	st.Sync = SyncStatus{Pending: len(actions), PendingKind: map[string]int{}, Extras: len(extras)}
 	for _, a := range actions {
 		st.Sync.PendingKind[a.Kind]++
 	}
-	agent := resolveAgent(omakases, host)
-	for _, r := range omakases {
-		for _, l := range omakaseLinks(r, r.Resolve(host), agent) {
+	agent := resolveAgent(packs)
+	for _, r := range packs {
+		for _, l := range packLinks(r, agent) {
 			st.Sync.Links++
 			if cur, err := os.Readlink(l.dst); err == nil && cur == l.src {
 				st.Sync.Linked++
@@ -110,13 +103,13 @@ func isGitRepo(dir string) bool {
 
 func printStatus(st Status) {
 	fmt.Printf("host      %s\n", st.Host)
-	fmt.Printf("makanai   %s\n", tildify(st.Config))
+	fmt.Printf("local     %s\n", tildify(st.Config))
 
-	fmt.Println("\nomakases")
-	if len(st.Omakases) == 0 {
+	fmt.Println("\npacks")
+	if len(st.Packs) == 0 {
 		fmt.Println("  none in use (try: omasushi use owner/repo)")
 	}
-	for _, o := range st.Omakases {
+	for _, o := range st.Packs {
 		kind := "git"
 		if o.Local {
 			kind = "local"
@@ -126,17 +119,11 @@ func printStatus(st Status) {
 			rev = o.Branch + "@" + o.Commit
 		}
 		var notes []string
-		if o.Name == MakanaiName {
-			notes = append(notes, "makanai")
-		}
-		if o.Recipe {
-			notes = append(notes, "recipe")
+		if o.Name == LocalName {
+			notes = append(notes, "this machine")
 		}
 		if o.Via != "" {
 			notes = append(notes, "via "+o.Via)
-		}
-		if len(o.Only) > 0 {
-			notes = append(notes, "only "+strings.Join(o.Only, ", "))
 		}
 		if o.Modified > 0 {
 			notes = append(notes, fmt.Sprintf("%d modified", o.Modified))
@@ -146,9 +133,6 @@ func printStatus(st Status) {
 		}
 		if o.Behind > 0 {
 			notes = append(notes, fmt.Sprintf("%d behind", o.Behind))
-		}
-		if o.HasHost {
-			notes = append(notes, "host overlay")
 		}
 		note := "clean"
 		if o.Commit == "" {
@@ -187,17 +171,17 @@ func printStatus(st Status) {
 	if s.Extras == 0 {
 		fmt.Println("  unrecorded nothing")
 	} else {
-		fmt.Printf("  unrecorded %d installed but not in any omakase   -> omasushi export\n", s.Extras)
+		fmt.Printf("  unrecorded %d installed but not in any pack   -> omasushi export <pack-dir>\n", s.Extras)
 	}
-	if len(st.Omakases) > 0 {
+	if len(st.Packs) > 0 {
 		var hints []string
-		for _, o := range st.Omakases {
+		for _, o := range st.Packs {
 			if o.Behind > 0 {
 				hints = append(hints, "omasushi update")
 				break
 			}
 		}
-		for _, o := range st.Omakases {
+		for _, o := range st.Packs {
 			if o.Modified > 0 || o.Ahead > 0 {
 				hints = append(hints, "commit & push "+o.Name)
 			}
