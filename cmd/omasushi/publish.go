@@ -11,32 +11,31 @@ import (
 	"strings"
 )
 
-// submitRepo is the GitHub repository whose issue form takes omakase
+// submitRepo is the GitHub repository whose issue form takes pack
 // submissions (Omarchy-plugin style). Overridable at build time
 // (-ldflags "-X main.submitRepo=…") or by $OMASUSHI_SUBMIT_REPO.
 var submitRepo = "polidog/omasushi"
 
-// publishCmd puts an omakase on the omasushi-web conveyor belt.
+// publishCmd puts a repository of packs on the omasushi.dev belt.
 //
-// There is no direct registration API any more: submissions go through a
-// GitHub issue on the omasushi repository, where a workflow validates
-// omasushi.yaml and puts the plate on the belt. The CLI does the local
-// half — find the repository URL, make sure omasushi.yaml is there and
-// pushed — then opens the submit issue form prefilled.
-func publishCmd(machine *Machine, file string, args []string) error {
+// Submissions go through a GitHub issue on the omasushi repository, where a
+// workflow validates the repository and puts its packs on the belt, one plate
+// each. The CLI does the local half — find the repository URL, make sure it
+// is committed and pushed — then opens the submit issue form prefilled.
+func publishCmd(local *Local, file string, args []string) error {
 	fs := flag.NewFlagSet("publish", flag.ExitOnError)
 	submit := fs.String("submit-repo", envOr("OMASUSHI_SUBMIT_REPO", submitRepo), "GitHub owner/repo whose issue form takes submissions")
 	dry := fs.Bool("dry-run", false, "resolve and print the submission URL, open nothing")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, `usage: omasushi publish [--dry-run] [<name>|<owner/repo>|<url>|<path>]
 
-With no argument, publishes the omakase in the working directory (./omasushi.yaml),
-else the single omakase in use. A configured omakase's name, a GitHub owner/repo,
-a github.com / gitlab.com URL, or a local checkout also work.
+With no argument, publishes the repository in the working directory. The name
+of a pack in use, a GitHub owner/repo, a github.com / gitlab.com URL, or a
+local checkout also work.
 
 Publishing opens a prefilled submission issue on github.com/`+*submit+` in your
-browser. A workflow there validates omasushi.yaml and comments the plate's URL
-on the issue once it is on the belt.`)
+browser. A workflow there validates the repository and comments the plates'
+URLs on the issue once its packs are on the belt.`)
 		fs.PrintDefaults()
 	}
 	fs.Parse(args)
@@ -45,7 +44,7 @@ on the issue once it is on the belt.`)
 		os.Exit(2)
 	}
 
-	repo, dir, err := publishTarget(machine, file, fs.Arg(0))
+	repo, dir, err := publishTarget(local, file, fs.Arg(0))
 	if err != nil {
 		return err
 	}
@@ -54,7 +53,7 @@ on the issue once it is on the belt.`)
 			fmt.Fprintln(os.Stderr, "warning:", w)
 		}
 	}
-	fmt.Printf("omakase: %s\n", repo)
+	fmt.Printf("repo:    %s\n", repo)
 
 	issue, err := submitIssueURL(*submit, repo)
 	if err != nil {
@@ -67,11 +66,11 @@ on the issue once it is on the belt.`)
 	if err := openBrowser(issue); err != nil {
 		return fmt.Errorf("could not open a browser (%v); open the URL above yourself", err)
 	}
-	fmt.Println("press Submit there; the workflow comments the plate's URL on the issue")
+	fmt.Println("press Submit there; the workflow comments the plates' URLs on the issue")
 	return nil
 }
 
-// submitIssueURL builds the prefilled "Submit an omakase" issue form URL.
+// submitIssueURL builds the prefilled "Submit packs" issue form URL.
 // Query keys matching the form's field ids (repo) prefill them.
 func submitIssueURL(submitRepo, repo string) (string, error) {
 	parts := strings.Split(submitRepo, "/")
@@ -79,7 +78,7 @@ func submitIssueURL(submitRepo, repo string) (string, error) {
 		return "", fmt.Errorf("bad submit repo %q (want owner/repo; set --submit-repo or $OMASUSHI_SUBMIT_REPO)", submitRepo)
 	}
 	q := url.Values{
-		"template": {"submit-omakase.yml"},
+		"template": {"submit-packs.yml"},
 		"title":    {"Submit: " + strings.TrimPrefix(strings.TrimPrefix(repo, "https://"), "www.")},
 		"repo":     {repo},
 	}
@@ -88,29 +87,25 @@ func submitIssueURL(submitRepo, repo string) (string, error) {
 
 // publishTarget resolves what to publish into a canonical repository URL and,
 // when it comes from a local checkout, that checkout's directory. With no
-// argument it is the checkout you are standing in, else this machine's recipe
-// — the one layer meant to be shared.
-func publishTarget(machine *Machine, file, arg string) (repo, dir string, err error) {
+// argument it is the checkout you are standing in.
+func publishTarget(local *Local, file, arg string) (repo, dir string, err error) {
 	switch {
 	case arg == "" && file != "":
-		dir = filepath.Dir(file)
+		dir = file
 	case arg == "":
-		if _, statErr := os.Stat(ManifestFile); statErr == nil {
+		if isPackRepo(".") {
 			dir = "." // standing in a checkout: publish the one you are in
 			break
 		}
-		if r := machine.recipeRepo(); r != "" {
-			return publishDir(r)
-		}
-		return "", "", fmt.Errorf("nothing to publish: no %s here, and no recipe set (`omasushi recipe <path>` names the omakase this machine publishes)", ManifestFile)
+		return "", "", fmt.Errorf("nothing to publish: no %s here; stand in the repository, or name a pack in use, an owner/repo or a path", ManifestFile)
 	default:
-		omakases, err := activeOmakases(machine, "")
+		packs, err := activePacks(local, "")
 		if err != nil {
 			return "", "", err
 		}
-		for _, r := range omakases {
-			if r.Name == arg {
-				return publishOmakase(r)
+		for _, p := range packs {
+			if p.Name == arg {
+				return publishPack(p)
 			}
 		}
 		_, target, local, err := resolveSource(arg)
@@ -128,40 +123,43 @@ func publishTarget(machine *Machine, file, arg string) (repo, dir string, err er
 }
 
 // publishDir is the local half of publishing: the checkout's origin, plus the
-// checks that it is an omakase at all. This machine's own manifest is not one
-// — it is the layer that never leaves the machine.
+// checks that it holds packs at all. This machine's own file is not one — it
+// is the layer that never leaves the machine.
 func publishDir(dir string) (repo, abs string, err error) {
 	abs, err = filepath.Abs(dir)
 	if err != nil {
 		return "", "", err
 	}
-	if abs == machineDir() {
-		return "", "", fmt.Errorf("%s is this machine's own omakase, not a recipe — publish the one under recipe:", tildify(abs))
+	if abs == localDir() {
+		return "", "", fmt.Errorf("%s is this machine's own file, never published; publish a repository of packs", tildify(abs))
 	}
-	if _, err := os.Stat(filepath.Join(abs, ManifestFile)); err != nil {
+	if !isPackRepo(abs) {
 		return "", "", fmt.Errorf("%s has no %s", abs, ManifestFile)
 	}
-	if _, err := LoadManifest(filepath.Join(abs, ManifestFile)); err != nil {
+	if _, err := packsFromDir(abs); err != nil {
 		return "", "", err
 	}
 	repo, err = originOf(abs)
 	return repo, abs, err
 }
 
-// publishOmakase picks the repo URL for an omakase in use: its recorded
-// source for git ones, the checkout's origin for local ones. Parts publish
-// their whole repository — the web lists the parts itself.
-func publishOmakase(r Omakase) (repo, dir string, err error) {
-	if !r.Local {
-		_, target, _, err := resolveSource(r.Source)
+// publishPack picks the repo URL for a pack in use: its recorded source for
+// git ones, the checkout's origin for local ones. A pack publishes its whole
+// repository — the web lists the packs itself.
+func publishPack(p Pack) (repo, dir string, err error) {
+	if p.Machine != nil {
+		return publishDir(p.Dir)
+	}
+	if !p.Local {
+		_, target, _, err := resolveSource(p.Source)
 		if err != nil {
 			return "", "", err
 		}
 		repo, err = canonicalRepoURL(target)
-		return repo, r.Repo, err
+		return repo, p.Repo, err
 	}
-	repo, err = originOf(r.Repo)
-	return repo, r.Repo, err
+	repo, err = originOf(p.Repo)
+	return repo, p.Repo, err
 }
 
 func originOf(dir string) (string, error) {
@@ -196,13 +194,13 @@ func canonicalRepoURL(remote string) (string, error) {
 	return "https://" + strings.ToLower(m[1]) + "/" + m[2] + "/" + m[3], nil
 }
 
-// publishWarnings lists things that would make the web's fetch of
-// omasushi.yaml differ from what the user sees locally. None are fatal.
+// publishWarnings lists things that would make the web's fetch of the
+// repository differ from what the user sees locally. None are fatal.
 func publishWarnings(dir string) (out []string) {
 	if !isGitRepo(dir) {
 		return nil
 	}
-	if run("git", "-C", dir, "ls-files", "--error-unmatch", ManifestFile) == "" {
+	if run("git", "-C", dir, "ls-files", "--error-unmatch", "--", ManifestFile, "*/"+ManifestFile) == "" {
 		out = append(out, ManifestFile+" is not committed; the web reads it from the repository")
 	}
 	if n := len(lines(run("git", "-C", dir, "status", "--porcelain"))); n > 0 {

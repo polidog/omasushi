@@ -9,62 +9,62 @@ import (
 )
 
 type Action struct {
-	Kind    string       `json:"kind"` // aur, pacman, font, default-*, omarchy-add, omarchy-enable, herdr-add, herdr-reload, hypr-reload, file-link, skill-link, command-link
-	Desc    string       `json:"desc"`
-	Omakase string       `json:"omakase,omitempty"`
-	Run     func() error `json:"-"`
+	Kind string       `json:"kind"` // aur, pacman, font, default-*, omarchy-add, omarchy-enable, herdr-add, herdr-reload, hypr-snippet, hypr-loader, hypr-reload, file-link, skill-link, command-link
+	Desc string       `json:"desc"`
+	Pack string       `json:"pack,omitempty"`
+	Run  func() error `json:"-"`
 }
 
-// link is a resolved symlink request: absolute source inside an omakase,
+// link is a resolved symlink request: absolute source inside a pack,
 // destination with ~ expanded.
 type link struct {
-	kind, omakase, label, src, dst string
+	kind, pack, label, src, dst string
 }
 
-// Plan diffs the layered omakases against the probed state and returns the
+// Plan diffs the layered packs against the probed state and returns the
 // actions needed. It never removes anything; extras are reported separately.
-// Each action carries the omakase behind it, so the plan can say where a
-// pending install comes from when several omakases are stacked.
-func Plan(omakases []Omakase, host string, have *State) (actions []Action, extras []string) {
-	var want Overlay
+// Each action carries the pack behind it, so the plan can say where a
+// pending install comes from when several packs are stacked.
+func Plan(packs []Pack, have *State) (actions []Action, extras []string) {
+	var want Manifest
 	var links []link
-	agent := resolveAgent(omakases, host)
-	// prov[key] attributes each declared item: the first omakase to list it
-	// (the item is installed on its account), the last to set a scalar (it
-	// wins the merge).
+	agent := resolveAgent(packs)
+	// prov[key] attributes each declared item: the first pack to list it (the
+	// item is installed on its account), the last to set a scalar (it wins
+	// the merge).
 	prov := map[string]string{}
 	first := func(key, name string) {
 		if _, ok := prov[key]; !ok {
 			prov[key] = name
 		}
 	}
-	for _, r := range omakases {
-		o := r.Resolve(host)
-		for _, p := range o.Packages.Pacman {
-			first("pacman:"+p, r.Name)
+	for _, p := range packs {
+		m := *p.Manifest
+		for _, pk := range m.Packages.Pacman {
+			first("pacman:"+pk, p.Name)
 		}
-		for _, p := range o.Packages.Aur {
-			first("aur:"+p, r.Name)
+		for _, pk := range m.Packages.Aur {
+			first("aur:"+pk, p.Name)
 		}
-		if o.Omarchy.Font != "" {
-			prov["font"] = r.Name
+		if m.Omarchy.Font != "" {
+			prov["font"] = p.Name
 		}
 		for kind, v := range map[string]string{
-			"default-agent": o.Omarchy.Defaults.Agent, "default-browser": o.Omarchy.Defaults.Browser,
-			"default-editor": o.Omarchy.Defaults.Editor, "default-terminal": o.Omarchy.Defaults.Terminal,
+			"default-agent": m.Omarchy.Defaults.Agent, "default-browser": m.Omarchy.Defaults.Browser,
+			"default-editor": m.Omarchy.Defaults.Editor, "default-terminal": m.Omarchy.Defaults.Terminal,
 		} {
 			if v != "" {
-				prov[kind] = r.Name
+				prov[kind] = p.Name
 			}
 		}
-		for _, p := range o.Omarchy.Plugins {
-			first("omarchy:"+normalizeGitURL(p.URL), r.Name)
+		for _, pl := range m.Omarchy.Plugins {
+			first("omarchy:"+normalizeGitURL(pl.URL), p.Name)
 		}
-		for _, p := range o.Herdr.Plugins {
-			first("herdr:"+p.Source, r.Name)
+		for _, pl := range m.Herdr.Plugins {
+			first("herdr:"+pl.Source, p.Name)
 		}
-		want = want.merge(o)
-		links = append(links, omakaseLinks(r, o, agent)...)
+		want = want.merge(m)
+		links = append(links, packLinks(p, agent)...)
 	}
 
 	var aur, pacman []string
@@ -78,22 +78,22 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 			pacman = append(pacman, p)
 		}
 	}
-	// One install action per declaring omakase, so a stacked plan reads
-	// "install foo bar <- someone/omakase" rather than one anonymous batch.
+	// One install action per declaring pack, so a stacked plan reads
+	// "install foo bar <- someone/packs/x" rather than one anonymous batch.
 	installs := func(kind, cmd string, missing []string) {
-		byOm := map[string][]string{}
+		byPack := map[string][]string{}
 		var names []string
 		for _, p := range missing {
 			n := prov[kind+":"+p]
-			if _, ok := byOm[n]; !ok {
+			if _, ok := byPack[n]; !ok {
 				names = append(names, n)
 			}
-			byOm[n] = append(byOm[n], p)
+			byPack[n] = append(byPack[n], p)
 		}
 		sort.Strings(names)
 		for _, n := range names {
-			pk := byOm[n]
-			actions = append(actions, Action{Kind: kind, Omakase: n, Desc: fmt.Sprintf("install %s", strings.Join(pk, " ")), Run: func() error {
+			pk := byPack[n]
+			actions = append(actions, Action{Kind: kind, Pack: n, Desc: fmt.Sprintf("install %s", strings.Join(pk, " ")), Run: func() error {
 				return runVisible(cmd, pk...)
 			}})
 		}
@@ -102,13 +102,13 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 	installs("aur", "omarchy-pkg-aur-add", aur)
 
 	if f := want.Omarchy.Font; f != "" && f != have.Font {
-		actions = append(actions, Action{Kind: "font", Omakase: prov["font"], Desc: fmt.Sprintf("%s -> %s", have.Font, f), Run: func() error {
+		actions = append(actions, Action{Kind: "font", Pack: prov["font"], Desc: fmt.Sprintf("%s -> %s", have.Font, f), Run: func() error {
 			return runVisible("omarchy-font-set", f)
 		}})
 	}
 	defaults := planDefaults(want.Omarchy.Defaults, have.Defaults)
 	for i := range defaults {
-		defaults[i].Omakase = prov[defaults[i].Kind]
+		defaults[i].Pack = prov[defaults[i].Kind]
 	}
 	actions = append(actions, defaults...)
 
@@ -118,7 +118,7 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 		inst, ok := have.OmarchyPlugins[normalizeGitURL(p.URL)]
 		switch {
 		case !ok:
-			actions = append(actions, Action{Kind: "omarchy-add", Omakase: from, Desc: fmt.Sprintf("add %s (enable=%v)", p.URL, p.Enable), Run: func() error {
+			actions = append(actions, Action{Kind: "omarchy-add", Pack: from, Desc: fmt.Sprintf("add %s (enable=%v)", p.URL, p.Enable), Run: func() error {
 				args := []string{p.URL, "--yes"}
 				if p.Enable {
 					args = append(args, "--enable")
@@ -127,7 +127,7 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 			}})
 		case p.Enable && !inst.Enabled:
 			id := inst.ID
-			actions = append(actions, Action{Kind: "omarchy-enable", Omakase: from, Desc: "enable " + id, Run: func() error {
+			actions = append(actions, Action{Kind: "omarchy-enable", Pack: from, Desc: "enable " + id, Run: func() error {
 				return runVisible("omarchy-plugin-enable", id)
 			}})
 		}
@@ -138,7 +138,7 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 		if have.HerdrPlugins[p.Source] {
 			continue
 		}
-		actions = append(actions, Action{Kind: "herdr-add", Omakase: prov["herdr:"+p.Source], Desc: "install " + p.Source, Run: func() error {
+		actions = append(actions, Action{Kind: "herdr-add", Pack: prov["herdr:"+p.Source], Desc: "install " + p.Source, Run: func() error {
 			args := []string{"plugin", "install", p.Source, "--yes"}
 			if p.Ref != "" {
 				args = append(args, "--ref", p.Ref)
@@ -149,21 +149,31 @@ func Plan(omakases []Omakase, host string, have *State) (actions []Action, extra
 
 	herdrTouched, hyprTouched := false, false
 	herdrDir := filepath.Join(expandHome("~"), ".config/herdr") + string(filepath.Separator)
-	hyprDir := filepath.Join(expandHome("~"), ".config/hypr") + string(filepath.Separator)
+	hyprPrefix := hyprDir() + string(filepath.Separator)
+	var snippets []string
 	for _, l := range links {
 		l := l
+		if l.kind == "hypr-snippet" {
+			snippets = append(snippets, l.dst)
+		}
 		if cur, err := os.Readlink(l.dst); err == nil && cur == l.src {
 			continue
 		}
-		actions = append(actions, Action{Kind: l.kind, Omakase: l.omakase, Desc: l.label, Run: func() error {
+		actions = append(actions, Action{Kind: l.kind, Pack: l.pack, Desc: l.label, Run: func() error {
 			return linkFile(l.src, l.dst)
 		}})
 		if strings.HasPrefix(l.dst, herdrDir) {
 			herdrTouched = true
 		}
-		if strings.HasPrefix(l.dst, hyprDir) {
+		if strings.HasPrefix(l.dst, hyprPrefix) {
 			hyprTouched = true
 		}
+	}
+	// The loader lists what is in omasushi.d once the links above are made:
+	// the packs' snippets plus whatever was already there.
+	if hyprLoaderPending(union(hyprSnippetsOnDisk(), snippets)) {
+		actions = append(actions, Action{Kind: "hypr-loader", Desc: tildify(hyprLoaderPath()) + " (loaded from hyprland.lua)", Run: writeHyprLoader})
+		hyprTouched = true
 	}
 	if herdrTouched {
 		// Best effort: the server may not be running on a fresh machine.
@@ -229,12 +239,12 @@ var agentDirs = map[string]struct{ skills, commands string }{
 }
 
 // resolveAgent decides which agent the agent: section is for: the stacked
-// omakases' omarchy.defaults.agent (what sync will make the default), else
-// the machine's current default, else claude.
-func resolveAgent(omakases []Omakase, host string) string {
-	var want Overlay
-	for _, r := range omakases {
-		want = want.merge(r.Resolve(host))
+// packs' omarchy.defaults.agent (what sync will make the default), else the
+// machine's current default, else claude.
+func resolveAgent(packs []Pack) string {
+	var want Manifest
+	for _, p := range packs {
+		want = want.merge(*p.Manifest)
 	}
 	if want.Omarchy.Defaults.Agent != "" {
 		return want.Omarchy.Defaults.Agent
@@ -247,67 +257,67 @@ func resolveAgent(omakases []Omakase, host string) string {
 	return "claude"
 }
 
-// omakaseLinks expands files:, claude.{skills,commands} and
-// agent.{skills,commands} of one omakase into concrete symlinks. Later omakases
+// packLinks expands files:, hypr:, claude.{skills,commands} and
+// agent.{skills,commands} of one pack into concrete symlinks. Later packs
 // override earlier ones for the same destination (handled by order in Plan:
 // the last link wins on sync). agent is the resolved default agent, which
 // picks the destination of the agent: section.
-func omakaseLinks(r Omakase, o Overlay, agent string) []link {
+func packLinks(p Pack, agent string) []link {
+	m := p.Manifest
 	var out []link
-	srcs := make([]string, 0, len(o.Files))
-	for s := range o.Files {
+	srcs := make([]string, 0, len(m.Files))
+	for s := range m.Files {
 		srcs = append(srcs, s)
 	}
 	sort.Strings(srcs)
 	for _, s := range srcs {
-		src, _ := filepath.Abs(filepath.Join(r.Dir, s))
-		out = append(out, link{"file-link", r.Name, fmt.Sprintf("%s -> %s", s, o.Files[s]), src, expandHome(o.Files[s])})
+		src, _ := filepath.Abs(filepath.Join(p.Dir, s))
+		out = append(out, link{"file-link", p.Name, fmt.Sprintf("%s -> %s", s, m.Files[s]), src, expandHome(m.Files[s])})
 	}
-	out = append(out, agentLinks(r, o.Claude, "claude", agentDirs["claude"].skills, agentDirs["claude"].commands)...)
-	if o.Agent.Skills != "" || o.Agent.Commands != "" {
+	if m.Hypr != "" {
+		src, _ := filepath.Abs(filepath.Join(p.Dir, m.Hypr))
+		dst := filepath.Join(hyprSnippetsDir(), hyprSnippetName(p))
+		out = append(out, link{"hypr-snippet", p.Name, fmt.Sprintf("%s -> %s", m.Hypr, tildify(dst)), src, dst})
+	}
+	out = append(out, agentLinks(p, m.Claude, agentDirs["claude"].skills, agentDirs["claude"].commands)...)
+	if m.Agent.Skills != "" || m.Agent.Commands != "" {
 		d, ok := agentDirs[agent]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "%s: agent.skills/commands: no known skills directory for agent %q; skipped\n", r.Name, agent)
+			fmt.Fprintf(os.Stderr, "%s: agent.skills/commands: no known skills directory for agent %q; skipped\n", p.Name, agent)
 		} else {
-			if o.Agent.Commands != "" && d.commands == "" {
-				fmt.Fprintf(os.Stderr, "%s: agent.commands: %s has no prompt-commands directory; skipped\n", r.Name, agent)
+			if m.Agent.Commands != "" && d.commands == "" {
+				fmt.Fprintf(os.Stderr, "%s: agent.commands: %s has no prompt-commands directory; skipped\n", p.Name, agent)
 			}
-			out = append(out, agentLinks(r, o.Agent, "agent", d.skills, d.commands)...)
+			out = append(out, agentLinks(p, m.Agent, d.skills, d.commands)...)
 		}
 	}
 	return out
 }
 
 // agentLinks links each skill directory of c.Skills under skillsDir and each
-// *.md of c.Commands under commandsDir (either "" = skip). section is the
-// manifest path the two directories sit under ("claude" or "agent"), which is
-// what a filtered use: names to take single skills or commands.
-func agentLinks(r Omakase, c Claude, section, skillsDir, commandsDir string) []link {
+// *.md of c.Commands under commandsDir (either "" = skip).
+func agentLinks(p Pack, c Claude, skillsDir, commandsDir string) []link {
 	var out []link
 	if c.Skills != "" && skillsDir != "" {
-		dir := filepath.Join(r.Dir, c.Skills)
+		dir := filepath.Join(p.Dir, c.Skills)
 		for _, e := range readDirSorted(dir) {
-			if !e.IsDir() || !r.Only.keeps(section+".skills", e.Name()) {
+			if !e.IsDir() {
 				continue
 			}
 			src := filepath.Join(dir, e.Name())
 			dst := expandHome(skillsDir + "/" + e.Name())
-			out = append(out, link{"skill-link", r.Name, fmt.Sprintf("%s -> %s/%s", filepath.Join(c.Skills, e.Name()), skillsDir, e.Name()), src, dst})
+			out = append(out, link{"skill-link", p.Name, fmt.Sprintf("%s -> %s/%s", filepath.Join(c.Skills, e.Name()), skillsDir, e.Name()), src, dst})
 		}
 	}
 	if c.Commands != "" && commandsDir != "" {
-		dir := filepath.Join(r.Dir, c.Commands)
+		dir := filepath.Join(p.Dir, c.Commands)
 		for _, e := range readDirSorted(dir) {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 				continue
 			}
-			if !r.Only.keeps(section+".commands", strings.TrimSuffix(e.Name(), ".md")) &&
-				!r.Only.keeps(section+".commands", e.Name()) {
-				continue
-			}
 			src := filepath.Join(dir, e.Name())
 			dst := expandHome(commandsDir + "/" + e.Name())
-			out = append(out, link{"command-link", r.Name, fmt.Sprintf("%s -> %s/%s", filepath.Join(c.Commands, e.Name()), commandsDir, e.Name()), src, dst})
+			out = append(out, link{"command-link", p.Name, fmt.Sprintf("%s -> %s/%s", filepath.Join(c.Commands, e.Name()), commandsDir, e.Name()), src, dst})
 		}
 	}
 	return out

@@ -14,7 +14,7 @@ import (
 
 // skillCmd installs the skills bundled in the binary (claude/skills of this
 // repository) into an agent's global skills directory, or removes them. No
-// omakase is involved: this is for someone who just wants the agent to know
+// pack is involved: this is for someone who just wants the agent to know
 // omasushi. The files are copied (not linked) so they survive `go install`
 // replacing the binary.
 //
@@ -30,7 +30,7 @@ func skillCmd(args []string) error {
 	agent := fs_.String("agent", "", "agent to install for (default: the Omarchy default agent)")
 	fs_.Parse(args[1:])
 	if *agent == "" {
-		*agent = resolveAgent(nil, "")
+		*agent = resolveAgent(nil)
 	}
 	d, ok := agentDirs[*agent]
 	if !ok {
@@ -71,7 +71,7 @@ func skillCmd(args []string) error {
 }
 
 // installSkills copies the bundled skills into skillsDir. With onlyInstalled
-// (update) skills not already there are skipped; a symlink (an omakase's) is
+// (update) skills not already there are skipped; a symlink (a pack's) is
 // always left alone. Returns the names written.
 func installSkills(names []string, skillsDir string, onlyInstalled bool) ([]string, error) {
 	var written []string
@@ -79,7 +79,7 @@ func installSkills(names []string, skillsDir string, onlyInstalled bool) ([]stri
 		dst := expandHome(skillsDir + "/" + n)
 		fi, err := os.Lstat(dst)
 		if err == nil && fi.Mode()&os.ModeSymlink != 0 {
-			fmt.Printf("%s: %s is a symlink (managed by an omakase); left as is\n", n, tildify(dst))
+			fmt.Printf("%s: %s is a symlink (managed by a pack); left as is\n", n, tildify(dst))
 			continue
 		}
 		if err != nil && onlyInstalled {

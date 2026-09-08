@@ -7,23 +7,23 @@ import (
 	"strings"
 )
 
-// Unlink is the reverse of the link half of sync: every symlink an omakase
-// put in place is removed, and a file that sync moved aside as .bak is put
-// back. Only links that point at the omakase are touched, so something the
-// user re-pointed by hand is left alone. Packages, plugins, font and defaults
-// are never undone (the tool never uninstalls, and the previous font/defaults
+// Unlink is the reverse of the link half of sync: every symlink a pack put in
+// place is removed, and a file that sync moved aside as .bak is put back.
+// Only links that point at the pack are touched, so something the user
+// re-pointed by hand is left alone. Packages, plugins, font and defaults are
+// never undone (the tool never uninstalls, and the previous font/defaults
 // were not recorded). Destinations with no .bak leave a hole rather than a
 // restored file, so they are called out at the end. Returns the destinations
 // it unlinked.
-func Unlink(omakases []Omakase, host string, dryRun bool) (undone []string, err error) {
+func Unlink(packs []Pack, dryRun bool) (undone []string, err error) {
 	var links []link
-	agent := resolveAgent(omakases, host)
-	for _, r := range omakases {
-		links = append(links, omakaseLinks(r, r.Resolve(host), agent)...)
+	agent := resolveAgent(packs)
+	for _, p := range packs {
+		links = append(links, packLinks(p, agent)...)
 	}
 	herdrDir := filepath.Join(expandHome("~"), ".config/herdr") + string(filepath.Separator)
-	hyprDir := filepath.Join(expandHome("~"), ".config/hypr") + string(filepath.Separator)
-	herdrTouched, hyprTouched := false, false
+	hyprPrefix := hyprDir() + string(filepath.Separator)
+	herdrTouched, hyprTouched, snippetGone := false, false, false
 	var noRestore []string
 	for _, l := range links {
 		cur, rerr := os.Readlink(l.dst)
@@ -33,9 +33,12 @@ func Unlink(omakases []Omakase, host string, dryRun bool) (undone []string, err 
 		bak := l.dst + ".bak"
 		_, hasBak := os.Lstat(bak)
 		desc := "rm " + l.dst
-		if hasBak == nil {
+		switch {
+		case hasBak == nil:
 			desc += " (restore .bak)"
-		} else {
+		case l.kind == "hypr-snippet":
+			// a snippet is the pack's alone: nothing was there before it
+		default:
 			noRestore = append(noRestore, l.dst)
 		}
 		fmt.Printf("==> %s: %s\n", l.kind, desc)
@@ -53,13 +56,22 @@ func Unlink(omakases []Omakase, host string, dryRun bool) (undone []string, err 
 		if strings.HasPrefix(l.dst, herdrDir) {
 			herdrTouched = true
 		}
-		if strings.HasPrefix(l.dst, hyprDir) {
+		if strings.HasPrefix(l.dst, hyprPrefix) {
 			hyprTouched = true
+		}
+		if l.kind == "hypr-snippet" {
+			snippetGone = true
 		}
 	}
 	warnNoRestore(noRestore, dryRun)
 	if dryRun {
 		return undone, nil
+	}
+	if snippetGone {
+		// The loader must stop naming what is gone before Hyprland rereads it.
+		if err := writeHyprLoader(); err != nil {
+			return undone, err
+		}
 	}
 	if herdrTouched {
 		if err := runVisible("herdr", "server", "reload-config"); err != nil {
@@ -74,8 +86,8 @@ func Unlink(omakases []Omakase, host string, dryRun bool) (undone []string, err 
 	return undone, nil
 }
 
-// warnNoRestore names the destinations that were only the omakase's file: the
-// link is gone and nothing took its place. Usually that is what the omakase
+// warnNoRestore names the destinations that were only the pack's file: the
+// link is gone and nothing took its place. Usually that is what the pack
 // added and nobody misses, but some of these are files the rest of a config
 // still reads — ~/.config/hypr/bindings.lua is required by Omarchy's
 // hyprland.lua, and removing it makes the next `hyprctl reload` fail — so

@@ -31,6 +31,7 @@ func TestUnlinkWarnsWhenNothingToRestore(t *testing.T) {
 	t.Setenv("HOME", home)
 	omarchy := t.TempDir()
 	t.Setenv("OMARCHY_PATH", omarchy)
+	t.Setenv("PATH", "") // no hyprctl / herdr: the real session must not be reloaded by a test
 
 	dir := t.TempDir()
 	for _, p := range []string{"files/hypr/bindings.lua", "files/kitty/kitty.conf"} {
@@ -48,13 +49,13 @@ func TestUnlinkWarnsWhenNothingToRestore(t *testing.T) {
 	os.MkdirAll(filepath.Join(omarchy, "config/hypr"), 0o755)
 	os.WriteFile(filepath.Join(omarchy, "config/hypr/bindings.lua"), []byte("default"), 0o644)
 
-	r := Omakase{Name: "t", Dir: dir, Manifest: &Manifest{Files: map[string]string{
+	r := Pack{Name: "t", Dir: dir, Manifest: &Manifest{Files: map[string]string{
 		"files/hypr/bindings.lua": "~/.config/hypr/bindings.lua",
 		"files/kitty/kitty.conf":  "~/.config/kitty/kitty.conf",
 	}}}
 
 	out := capture(t, func() {
-		if _, err := Unlink([]Omakase{r}, "", false); err != nil {
+		if _, err := Unlink([]Pack{r}, false); err != nil {
 			t.Fatal(err)
 		}
 	})
