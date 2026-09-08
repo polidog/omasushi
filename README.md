@@ -1,5 +1,7 @@
 # omasushi
 
+English | [日本語](README.ja.md)
+
 Add a feature to a stock [Omarchy](https://omarchy.org) machine — Japanese input,
 tmux-style keys for herdr, a font setup — as one unit: the packages, the Omarchy
 plugins, the font and default apps, the config it needs, the agent skills. Diff
