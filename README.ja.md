@@ -69,7 +69,7 @@ omakase/
 | `omarchy.defaults.{agent,browser,editor,terminal}` | `omarchy-default-*` |
 | `omarchy.plugins[]` `{url, enable}` | `omarchy-plugin-add` / `omarchy-plugin-enable` |
 | `herdr.plugins[]` `{source, ref}` | `herdr plugin install` |
-| `hypr`（`.lua` ファイル） | `~/.config/hypr/omasushi/<pack>.lua` にリンクし、`hyprland.lua` から Omarchy のデフォルトの後に読み込む。複数のパックが `bindings.lua` を取り合わずにキーバインドを足せる |
+| `hypr`（`.lua` ファイル） | `~/.config/hypr/omasushi.d/<pack>.lua` にリンクする。`~/.config/hypr/omasushi.lua` がそこの全スニペットを読み込み、`hyprland.lua` が Omarchy のデフォルトの後で一度だけそれを require する。複数のパックが `bindings.lua` を取り合わずにキーバインドを足せる |
 | `files` `{pack-path: ~/dest}` | シンボリックリンク。実体のファイルがあれば `.bak` に退避する |
 | `agent.skills`（ディレクトリ） | 各サブディレクトリを**デフォルトエージェント**のスキルディレクトリにリンクする（`~/.claude/skills/<name>`、`~/.codex/skills/<name>`、…）。エージェントは、どれかのパックが `omarchy.defaults.agent` を設定していればそれ、なければこのマシンの `omarchy-default-agent`、それもなければ claude |
 | `agent.commands`（ディレクトリ） | 各 `*.md` を同様にリンク（`~/.claude/commands/`、`~/.codex/prompts/`、…） |

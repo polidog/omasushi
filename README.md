@@ -69,7 +69,7 @@ pending action (`install fcitx5-mozc  <- omakase/ime`).
 | `omarchy.defaults.{agent,browser,editor,terminal}` | `omarchy-default-*` |
 | `omarchy.plugins[]` `{url, enable}` | `omarchy-plugin-add` / `omarchy-plugin-enable` |
 | `herdr.plugins[]` `{source, ref}` | `herdr plugin install` |
-| `hypr` (a `.lua` file) | link it into `~/.config/hypr/omasushi/<pack>.lua`, loaded from `hyprland.lua` after Omarchy's defaults — so several packs can add bindings without fighting over `bindings.lua` |
+| `hypr` (a `.lua` file) | link it into `~/.config/hypr/omasushi.d/<pack>.lua`; `~/.config/hypr/omasushi.lua` loads every snippet there, and `hyprland.lua` requires it once, after Omarchy's defaults — so several packs can add bindings without fighting over `bindings.lua` |
 | `files` `{pack-path: ~/dest}` | symlink; an existing real file is moved to `.bak` |
 | `agent.skills` (dir) | symlink each subdirectory into the **default agent's** skills directory (`~/.claude/skills/<name>`, `~/.codex/skills/<name>`, …). The agent is `omarchy.defaults.agent` if any pack sets it, else this machine's `omarchy-default-agent`, else claude |
 | `agent.commands` (dir) | symlink each `*.md` likewise (`~/.claude/commands/`, `~/.codex/prompts/`, …) |
