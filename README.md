@@ -59,6 +59,11 @@ omakase/
 them all. Packs from different repos stack: `diff` names the pack behind each
 pending action (`install fcitx5-mozc  <- omakase/ime`).
 
+`omasushi use owner/repo/herdr@v1.2.0` pins it: the checkout stays at that tag
+(or branch, or commit) and `update` re-fetches the ref instead of pulling.
+`use owner/repo/herdr` again lets it float. A repository is one checkout, so
+its packs are pinned together — two refs on one repo is an error.
+
 ## What a pack can declare
 
 | key | what sync does |
@@ -165,8 +170,9 @@ submission repo.
 ## Commands
 
 ```
-omasushi use <owner/repo[/pack]|url|path>
-                                     add a pack (or every pack of a repo) to this machine
+omasushi use <owner/repo[/pack][@ref]|url|path>
+                                     add a pack (or every pack of a repo) to this machine;
+                                     @ref pins its checkout to a tag, branch or commit
 omasushi list | update | remove <name>
 omasushi status [--json]             where am I: packs + their git state, this
                                      machine's setup, pending/unrecorded counts

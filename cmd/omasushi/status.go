@@ -30,9 +30,10 @@ type PackStatus struct {
 	Via      string `json:"via,omitempty"` // pulled in by this pack's use:
 	Branch   string `json:"branch,omitempty"`
 	Commit   string `json:"commit,omitempty"`
-	Modified int    `json:"modified"` // uncommitted changes (git status --porcelain)
-	Ahead    int    `json:"ahead"`    // commits not pushed
-	Behind   int    `json:"behind"`   // commits not pulled (as of last fetch)
+	Modified int    `json:"modified"`      // uncommitted changes (git status --porcelain)
+	Ref      string `json:"ref,omitempty"` // pinned to this tag/branch/commit
+	Ahead    int    `json:"ahead"`         // commits not pushed
+	Behind   int    `json:"behind"`        // commits not pulled (as of last fetch)
 }
 
 type MachineStatus struct {
@@ -56,7 +57,7 @@ func gatherStatus(packs []Pack, have *State) Status {
 	host, _ := os.Hostname()
 	st := Status{Host: host, Config: localPath(), Packs: []PackStatus{}}
 	for _, r := range packs {
-		o := PackStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local, Via: r.Via}
+		o := PackStatus{Name: r.Name, Source: r.Source, Dir: r.Dir, Local: r.Local, Via: r.Via, Ref: r.Ref}
 		if isGitRepo(r.Repo) {
 			o.Branch = run("git", "-C", r.Repo, "rev-parse", "--abbrev-ref", "HEAD")
 			o.Commit = run("git", "-C", r.Repo, "rev-parse", "--short", "HEAD")
@@ -117,6 +118,9 @@ func printStatus(st Status) {
 		rev := "-"
 		if o.Commit != "" {
 			rev = o.Branch + "@" + o.Commit
+		}
+		if o.Ref != "" {
+			rev = o.Ref + "@" + o.Commit
 		}
 		var notes []string
 		if o.Name == LocalName {

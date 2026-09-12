@@ -59,6 +59,11 @@ omakase/
 別のリポジトリのパックも重ねられる。`diff` は保留中の各アクションの出どころを添えて表示する
 （`install fcitx5-mozc  <- omakase/ime`）。
 
+`omasushi use owner/repo/herdr@v1.2.0` でバージョンを固定できる。チェックアウトはそのタグ
+（ブランチ、コミットでも可）に留まり、`update` は pull の代わりにその ref を取り直す。
+もう一度 `use owner/repo/herdr` とすれば固定は外れる。リポジトリはチェックアウト 1 つなので、
+そのパックはまとめて固定される。同じリポジトリに別々の ref を指定するとエラーになる。
+
 ## パックに書けること
 
 | キー | sync が何をするか |
@@ -162,8 +167,9 @@ omasushi publish        # いまいるリポジトリの、内容が埋まった
 ## コマンド
 
 ```
-omasushi use <owner/repo[/pack]|url|path>
-                                     パック（またはリポジトリの全パック）をこのマシンに足す
+omasushi use <owner/repo[/pack][@ref]|url|path>
+                                     パック（またはリポジトリの全パック）をこのマシンに足す。
+                                     @ref でチェックアウトをタグ／ブランチ／コミットに固定
 omasushi list | update | remove <name>
 omasushi status [--json]             いまどこにいるか: パックと git の状態、
                                      このマシンの設定、保留中／未記録の件数

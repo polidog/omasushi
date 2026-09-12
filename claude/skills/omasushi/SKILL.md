@@ -19,8 +19,9 @@ Omarchy plugins. omasushi is for the feature that cuts across — a package *and
 ```sh
 omasushi use owner/repo/ime      # take one pack (GitHub shorthand, URL, or local path); remove it by the same name
 omasushi use owner/repo          # every pack of a repository (packs added to it later come along)
+omasushi use owner/repo/ime@v1.2.0  # pinned: the checkout stays at that tag/branch/commit; `use` again without @ unpins
 omasushi list                    # packs in use ("via X" = pulled in by X's use:)
-omasushi update                  # git pull remote repositories
+omasushi update                  # git pull remote repositories (a pinned one is re-fetched at its ref)
 omasushi remove <name>           # drop it from use:, unlink its files, delete the managed checkout if nothing else needs it
 
 omasushi status [--json]         # overview: packs (git branch/commit, modified/behind), machine setup, pending & unrecorded counts
@@ -116,7 +117,7 @@ git clone, so do not run it without the user seeing the diff.
 description: short blurb shown by tools   # name: is for a repository root; packs are named by their directory
 use:                             # packs this one needs: loaded underneath it, so this file wins
   - ../fonts                     # a sibling in this repository
-  - polidog/omakase/ime          # owner/repo[/pack], URL, or path
+  - polidog/omakase/ime          # owner/repo[/pack][@ref], URL, or path; @ref pins (one ref per repository)
 packages:
   pacman: [pkg]                  # official repos; written by hand
   aur: [pkg]                     # filled by export (pacman -Qqm)

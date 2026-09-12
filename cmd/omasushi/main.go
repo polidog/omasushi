@@ -36,13 +36,15 @@ func usage() {
 usage: omasushi [-f <pack-dir>] <command> [args]
 
 packs:
-  use <owner/repo[/pack]|url|path>
+  use <owner/repo[/pack][@ref]|url|path>
                               take a pack (clone its repository, or point at a
                               local dir); owner/repo takes every pack of a
-                              repository, owner/repo/herdr just that one
+                              repository, owner/repo/herdr just that one;
+                              @v1.2.0 pins the checkout to a tag/branch/commit
   list                        show packs in use (name, source, checkout;
                               "via X" = pulled in by X's use:)
-  update                      git pull every remote repository
+  update                      git pull every remote repository (a pinned one
+                              is re-fetched at its ref)
   remove <name>               forget a pack (unlinks its files, deletes its
                               managed checkout once nothing else needs it)
   init <dir>                  scaffold a repository of packs, or a pack inside one
@@ -162,6 +164,9 @@ func main() {
 			}
 			if p.Via != "" {
 				note += "  (via " + p.Via + ")"
+			}
+			if p.Ref != "" {
+				note += "  (pinned @" + p.Ref + ")"
 			}
 			fmt.Printf("%-28s %-6s %-44s %s%s\n", p.Name, kind, p.Source, tildify(p.Dir), note)
 		}
