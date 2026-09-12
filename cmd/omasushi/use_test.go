@@ -184,3 +184,15 @@ func resolve(t *testing.T, dir string) []Pack {
 	}
 	return out
 }
+
+func TestResolveUsesRefusesTwoPinsOfOneCheckout(t *testing.T) {
+	a := Pack{Name: "o/r/a", Repo: "/x/o/r", Ref: "v1"}
+	b := Pack{Name: "o/r/b", Repo: "/x/o/r", Ref: "v2"}
+	if _, err := resolveUses([]Pack{a, b}); err == nil {
+		t.Fatal("want error for two refs on one checkout")
+	}
+	b.Ref = "v1"
+	if _, err := resolveUses([]Pack{a, b}); err != nil {
+		t.Fatal(err)
+	}
+}

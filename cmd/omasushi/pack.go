@@ -23,6 +23,7 @@ type Pack struct {
 	Repo     string   // the checkout (git root); Update pulls here
 	Dir      string   // Repo/Sub: where omasushi.yaml and its files live
 	Local    bool     // Repo is a user path, not managed by omasushi (never pulled)
+	Ref      string   // the tag, branch or commit the checkout is pinned to ("" = default branch, pulled by update)
 	Uses     []string // use: this pack carries (resolved by resolveUses)
 	Via      string   // name of the pack whose use: pulled this one in ("" = taken directly)
 	Manifest *Manifest
@@ -159,6 +160,16 @@ type source struct {
 	Target string // git URL or absolute local dir
 	Local  bool
 	Sub    string // the pack's directory in the repository, "" for the root
+	Ref    string // owner/repo/pack@ref: the tag, branch or commit to pin the checkout to
+}
+
+// String is the use: entry for src: what parseSource read, pack and pin included.
+func (src source) String() string {
+	s := packName(src.Repo, src.Sub)
+	if src.Ref != "" {
+		s += "@" + src.Ref
+	}
+	return s
 }
 
 // parseSource turns user input into a source.
@@ -167,11 +178,20 @@ type source struct {
 //	owner/repo/pack             -> same repository, Sub = pack
 //	https://github.com/o/r/pack -> Sub = pack (github.com / gitlab.com only)
 //	https://... / git@...       -> as is
+//	any of those @v1.2.0        -> Ref = v1.2.0 (a tag, branch or commit); local dirs take none
 //	./dir, ../dir, ~/dir, /abs, or an existing directory -> local
 func parseSource(s string) (source, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return source{}, fmt.Errorf("empty pack source")
+	}
+	var ref string
+	// git@host:a/b has an @ too; a ref never holds a / or :.
+	if i := strings.LastIndex(s, "@"); i > 0 && !strings.ContainsAny(s[i+1:], "/:") {
+		s, ref = s[:i], s[i+1:]
+		if ref == "" {
+			return source{}, fmt.Errorf("empty ref after @ in %q", s)
+		}
 	}
 	isPathy := strings.HasPrefix(s, "/") || strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") ||
 		strings.HasPrefix(s, "~") || s == "."
@@ -206,6 +226,7 @@ func parseSource(s string) (source, error) {
 		return source{}, err
 	}
 	src.Name = repoPath(src.Target)
+	src.Ref = ref
 	return src, nil
 }
 
@@ -304,7 +325,7 @@ func isPackRepo(dir string) bool {
 // only their index: it may name the repository, and nothing else.
 func packsIn(src source, repo, name string) ([]Pack, error) {
 	load := func(sub string) (Pack, error) {
-		p := Pack{Name: packName(src.Name, sub), Source: src.Repo, Sub: sub, Repo: repo, Dir: filepath.Join(repo, sub), Local: src.Local}
+		p := Pack{Name: packName(src.Name, sub), Source: src.Repo, Sub: sub, Repo: repo, Dir: filepath.Join(repo, sub), Local: src.Local, Ref: src.Ref}
 		if sub == "" && name != "" {
 			p.Name = name
 		}
@@ -380,9 +401,12 @@ func packsFromDir(dir string) ([]Pack, error) {
 // truth.
 //
 // A pack already loaded — directly, or through another use: — keeps its
-// first position, which also makes cycles harmless.
+// first position, which also makes cycles harmless. One checkout serves
+// every pack of a repository, so two of them pinned to different refs is
+// an error rather than a silent last-one-wins.
 func resolveUses(ps []Pack) ([]Pack, error) {
 	at := map[string]bool{}
+	pinned := map[string]Pack{} // by Repo
 	var out []Pack
 	var add func(ps []Pack, via string) error
 	add = func(ps []Pack, via string) error {
@@ -392,6 +416,10 @@ func resolveUses(ps []Pack) ([]Pack, error) {
 			}
 			p.Via = via
 			at[p.Name] = true
+			if q, ok := pinned[p.Repo]; ok && q.Ref != p.Ref {
+				return fmt.Errorf("%s is pinned to %q by %s and %q by %s; one checkout, one ref", filepath.Base(p.Repo), q.Ref, q.Name, p.Ref, p.Name)
+			}
+			pinned[p.Repo] = p
 			// This machine's file is the root of the stack, not a middleman:
 			// what it uses is what the user asked for directly.
 			mine := p.Name
@@ -433,6 +461,7 @@ func loadUse(entry string, from Pack) ([]Pack, error) {
 			if src.Sub == "." {
 				src.Sub = ""
 			}
+			src.Ref = from.Ref // a sibling shares the checkout, so the pin
 			return packsIn(src, from.Repo, "")
 		}
 		entry = abs
@@ -445,10 +474,47 @@ func loadUse(entry string, from Pack) ([]Pack, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !src.Local {
+		if err := pin(repo, src.Ref, false); err != nil {
+			return nil, err
+		}
+	}
 	if !isPackRepo(repo) {
 		return nil, fmt.Errorf("%s has no %s", repo, ManifestFile)
 	}
 	return packsIn(src, repo, "")
+}
+
+// pin puts a managed checkout where its use: entry says: detached at ref (a
+// tag, branch or commit), or on the default branch when there is no ref and
+// it was pinned before. refresh goes to the network first (update, use);
+// otherwise it is only touched when ref is not on disk yet.
+func pin(repo, ref string, refresh bool) error {
+	git := func(args ...string) error { return runVisible("git", append([]string{"-C", repo}, args...)...) }
+	out := func(args ...string) string { return run("git", append([]string{"-C", repo}, args...)...) }
+	if ref == "" {
+		if out("symbolic-ref", "-q", "HEAD") == "" {
+			branch := strings.TrimPrefix(out("rev-parse", "--abbrev-ref", "origin/HEAD"), "origin/")
+			if err := git("checkout", branch); err != nil {
+				return err
+			}
+		}
+		if !refresh {
+			return nil
+		}
+		return git("pull", "--ff-only")
+	}
+	want := out("rev-parse", "-q", "--verify", ref+"^{commit}")
+	if refresh || want == "" {
+		if err := git("fetch", "--depth", "1", "origin", ref); err != nil {
+			return err
+		}
+		want = out("rev-parse", "FETCH_HEAD")
+	}
+	if want == out("rev-parse", "HEAD") {
+		return nil
+	}
+	return git("checkout", "--detach", want)
 }
 
 // ensureCheckout returns the checkout directory for src, cloning a remote
@@ -480,17 +546,19 @@ func (l *Local) Add(input string) ([]Pack, error) {
 	if err != nil {
 		return nil, err
 	}
+	fresh := false
 	if !src.Local {
-		repo := filepath.Join(packsDir(), src.Name)
-		if _, err := os.Stat(repo); err == nil {
-			if err := runVisible("git", "-C", repo, "pull", "--ff-only"); err != nil {
-				return nil, err
-			}
-		}
+		_, err := os.Stat(filepath.Join(packsDir(), src.Name))
+		fresh = err != nil
 	}
 	repo, err := ensureCheckout(src)
 	if err != nil {
 		return nil, err
+	}
+	if !src.Local {
+		if err := pin(repo, src.Ref, !fresh); err != nil {
+			return nil, err
+		}
 	}
 	if !isPackRepo(repo) {
 		return nil, fmt.Errorf("%s has no %s", repo, ManifestFile)
@@ -499,14 +567,16 @@ func (l *Local) Add(input string) ([]Pack, error) {
 	if err != nil {
 		return nil, err
 	}
-	l.use(packName(src.Repo, src.Sub))
+	l.use(src.String())
 	return ps, l.Save()
 }
 
-// use appends a source to use: unless it is already there.
+// use appends a source to use:, or rewrites the entry already naming that
+// pack — so `use x@v2` re-pins x@v1, and `use x` lets it float again.
 func (l *Local) use(source string) {
-	for _, u := range l.Use {
+	for i, u := range l.Use {
 		if sameSource(u, source) {
+			l.Use[i] = source
 			return
 		}
 	}
@@ -554,7 +624,8 @@ func (l *Local) Remove(name string) error {
 		var kept []string
 		for _, s := range subs {
 			if s != sub {
-				kept = append(kept, packName(u, s))
+				src.Sub = s
+				kept = append(kept, src.String())
 			}
 		}
 		l.Use = append(l.Use[:i:i], append(kept, l.Use[i+1:]...)...)
@@ -585,7 +656,9 @@ func (l *Local) usesRepo(repoName string) bool {
 	return false
 }
 
-// Update pulls every remote repository once. Local ones are left alone.
+// Update pulls every remote repository once; a pinned one is re-fetched at
+// its ref instead (a branch pin moves, a tag pin stays). Local ones are left
+// alone.
 func Update(packs []Pack) error {
 	done := map[string]bool{}
 	for _, p := range packs {
@@ -598,7 +671,7 @@ func Update(packs []Pack) error {
 			continue
 		}
 		fmt.Printf("==> %s\n", repoLabel(packs, p.Repo))
-		if err := runVisible("git", "-C", p.Repo, "pull", "--ff-only"); err != nil {
+		if err := pin(p.Repo, p.Ref, true); err != nil {
 			return err
 		}
 	}

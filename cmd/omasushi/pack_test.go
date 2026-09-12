@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,10 +39,72 @@ func TestParseSource(t *testing.T) {
 			t.Errorf("%q: name %q, want %q", c.in, src.Name, wantName)
 		}
 	}
-	for _, bad := range []string{"", "polidog", "polidog/omakase/../x", "polidog/omakase/.git"} {
+	for _, bad := range []string{"", "polidog", "polidog/omakase/../x", "polidog/omakase/.git", "polidog/omakase@"} {
 		if _, err := parseSource(bad); err == nil {
 			t.Errorf("%q: want error", bad)
 		}
+	}
+}
+
+func TestParseSourceRef(t *testing.T) {
+	for in, want := range map[string]string{
+		"polidog/omakase/herdr@v1.2.0":                "polidog/omakase/herdr@v1.2.0",
+		"polidog/omakase@main":                        "polidog/omakase@main",
+		"git@gitlab.com:polidog/omakase/herdr@abc123": "https://gitlab.com/polidog/omakase.git/herdr@abc123",
+		"git@gitlab.com:polidog/omakase":              "git@gitlab.com:polidog/omakase",
+	} {
+		src, err := parseSource(in)
+		if err != nil {
+			t.Fatalf("%q: %v", in, err)
+		}
+		if got := src.String(); got != want || src.Sub == "@" {
+			t.Errorf("%q: got %q (%+v), want %q", in, got, src, want)
+		}
+	}
+	if !sameSource("polidog/omakase/herdr@v1", "polidog/omakase/herdr@v2") {
+		t.Error("a pin does not make a different pack")
+	}
+	l := &Local{}
+	l.use("polidog/omakase/herdr@v1")
+	l.use("polidog/omakase/herdr@v2")
+	l.use("polidog/omakase/herdr")
+	if len(l.Use) != 1 || l.Use[0] != "polidog/omakase/herdr" {
+		t.Errorf("use should rewrite the pin in place: %v", l.Use)
+	}
+}
+
+// pin drives a real git checkout: detached at a tag, back on the branch when
+// the ref goes, following a moved branch on refresh.
+func TestPin(t *testing.T) {
+	if !gitAvailable() {
+		t.Skip("no git")
+	}
+	dir := t.TempDir()
+	up, cl := filepath.Join(dir, "up"), filepath.Join(dir, "cl")
+	git := func(args ...string) string {
+		out, err := exec.Command("git", args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q", "-b", "main", up)
+	git("-C", up, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "one")
+	git("-C", up, "tag", "v1")
+	git("-C", up, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "two")
+	git("clone", "-q", up, cl)
+	v1, tip := git("-C", up, "rev-parse", "v1"), git("-C", up, "rev-parse", "main")
+	head := func() string { return git("-C", cl, "rev-parse", "HEAD") }
+
+	if err := pin(cl, "v1", false); err != nil || head() != v1 {
+		t.Fatalf("pin v1: %v, head %s want %s", err, head(), v1)
+	}
+	if err := pin(cl, "", false); err != nil || head() != tip || git("-C", cl, "symbolic-ref", "HEAD") != "refs/heads/main" {
+		t.Fatalf("unpin: %v, head %s want %s on main", err, head(), tip)
+	}
+	git("-C", up, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "three")
+	if err := pin(cl, "main", true); err != nil || head() != git("-C", up, "rev-parse", "main") {
+		t.Fatalf("pin main refresh: %v, head %s", err, head())
 	}
 }
 
